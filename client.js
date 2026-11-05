@@ -22,7 +22,7 @@ window.__ModuleLoader__.load({
     /** Host route for the approximate currency rates. */
     const RATES_ROUTE = '/api/expenses.rates'
     /** Build identity reported to the platform on balance requests. */
-    const CLIENT_VERSION = '0.2.2'
+    const CLIENT_VERSION = '0.3.1'
     const CURRENCY_KEY = 'dsh-expenses:currency'
     const CURRENCIES = ['₽', '$', '¥']
     /** Currency symbol ↔ ISO code, the vocabulary the rate line and the price conversion use. */
@@ -39,6 +39,9 @@ window.__ModuleLoader__.load({
     /** Live refresh cadence while the panel is open, and after it was first opened. */
     const BALANCE_REFRESH_MS = 20000
     const BALANCE_BACKGROUND_MS = 60000
+    /** Table sort and filter preferences, remembered per browser like the currency. */
+    const TABLE_SORT_KEY = 'dsh-expenses:table-sort'
+    const TABLE_FILTERS_KEY = 'dsh-expenses:table-filters'
 
     /** Every visible string. Registered for `ru` and `en` so the panel stays Russian. */
     const DICT = {
@@ -100,84 +103,134 @@ window.__ModuleLoader__.load({
       rateFailed: 'Курс недоступен',
       rateUpdatedPrefix: 'курс обновлён в',
       rateStale: 'курс мог устареть',
+      search: 'Поиск по названию сессии',
+      searchClear: 'Сбросить поиск',
+      onlyToday: 'Только сегодня',
+      hideSubagents: 'Без субагентов',
+      shown: 'Показано',
+      of: 'из',
+      shownCost: 'Стоимость выбранных',
+      noMatches: 'По этому фильтру сессий нет.',
+      resetFilters: 'Сбросить фильтры',
+      sortBy: 'Сортировать',
+      ascending: 'по возрастанию',
+      descending: 'по убыванию',
     }
 
     const CSS = `
-.dsh-exp-page{box-sizing:border-box;display:flex;width:100%;min-width:0;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font-size:14px;line-height:1.6}
-.dsh-exp-scroll{flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable}
-.dsh-exp-content{max-width:960px;margin:0 auto;padding:0 clamp(24px,4vw,48px) 48px}
-.dsh-exp-heading{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;padding-top:28px;margin-bottom:24px}
-.dsh-exp-heading h1{margin:0;font-size:20px;font-weight:500;line-height:28px}
-.dsh-exp-sub{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
+.dsh-exp-page{box-sizing:border-box;display:flex;width:100%;min-width:0;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);background:radial-gradient(900px 260px at 12% -90px,color-mix(in srgb,var(--dsw-alias-brand-primary) 10%,transparent),transparent 72%),radial-gradient(760px 220px at 88% -110px,color-mix(in srgb,var(--dsw-alias-state-business-primary) 8%,transparent),transparent 72%),var(--dsw-alias-bg-base);font-size:14px;line-height:1.6}
+.dsh-exp-scroll{position:relative;flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable}
+.dsh-exp-content{max-width:1000px;margin:0 auto;padding:0 clamp(24px,4vw,48px) 56px}
+.dsh-exp-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding-top:28px;margin-bottom:22px}
+.dsh-exp-heading-main{display:flex;align-items:center;gap:14px;min-width:0}
+.dsh-exp-logo{display:flex;flex:none;align-items:center;justify-content:center;width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--dsw-alias-brand-primary),color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,#8b5cf6));color:var(--dsw-alias-label-primary-inverted);box-shadow:0 4px 12px color-mix(in srgb,var(--dsw-alias-brand-primary) 26%,transparent)}
+.dsh-exp-heading h1{margin:0;font-size:22px;font-weight:600;line-height:30px;letter-spacing:-.01em}
+.dsh-exp-sub{margin:2px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
 .dsh-exp-actions{display:flex;flex:none;align-items:center;gap:12px}
 .dsh-exp-updated{color:var(--dsw-alias-label-tertiary);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-button{appearance:none;height:32px;padding:0 12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;white-space:nowrap;cursor:pointer}
-.dsh-exp-button:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
-.dsh-exp-button:disabled{color:var(--dsw-alias-label-caption);cursor:default}
+.dsh-exp-button{appearance:none;height:32px;padding:0 14px;border:.5px solid transparent;border-radius:8px;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-inverted);font:inherit;font-size:13px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;box-shadow:0 1px 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
+.dsh-exp-button:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}
+.dsh-exp-button:disabled{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);box-shadow:none;cursor:default}
 .dsh-exp-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px}
-.dsh-exp-card{box-sizing:border-box;min-width:0;padding:16px 18px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1)}
+.dsh-exp-card,.dsh-exp-pricing,.dsh-exp-topups{position:relative;box-sizing:border-box;min-width:0;overflow:hidden;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.dsh-exp-card::before,.dsh-exp-pricing::before,.dsh-exp-topups::before{content:'';position:absolute;inset:0 0 auto;height:2px;background:var(--exp-accent,transparent);opacity:.85}
+.dsh-exp-card{padding:16px 18px}
+.dsh-exp-cards .dsh-exp-card:nth-child(1){--exp-accent:var(--dsw-alias-brand-primary);background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-brand-primary) 5%,var(--dsw-alias-bg-layer-1)) 0,var(--dsw-alias-bg-layer-1) 62%)}
+.dsh-exp-cards .dsh-exp-card:nth-child(2){--exp-accent:var(--dsw-alias-state-business-primary);background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 5%,var(--dsw-alias-bg-layer-1)) 0,var(--dsw-alias-bg-layer-1) 62%)}
 .dsh-exp-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-.dsh-exp-card-title{color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
-.dsh-exp-cost{font-size:20px;font-weight:600;line-height:28px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-cost-empty{color:var(--dsw-alias-label-tertiary);font-size:20px;font-weight:500;line-height:28px}
+.dsh-exp-card-title{color:var(--dsw-alias-label-secondary);font-size:13px;font-weight:500;line-height:20px}
+.dsh-exp-cost{font-size:22px;font-weight:600;line-height:30px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dsh-exp-cost-empty{color:var(--dsw-alias-label-tertiary);font-size:22px;font-weight:500;line-height:30px}
 .dsh-exp-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}
 .dsh-exp-metric{display:flex;flex-direction:column;gap:2px;min-width:0}
 .dsh-exp-metric-label{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;white-space:nowrap;text-overflow:ellipsis}
-.dsh-exp-metric-value{font-size:14px;line-height:22px;font-variant-numeric:tabular-nums}
-.dsh-exp-pricing{display:flex;flex-direction:column;box-sizing:border-box;padding:16px 18px;margin-bottom:24px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1)}
+.dsh-exp-metric-label::before{content:'';display:inline-block;width:6px;height:6px;margin-right:7px;border-radius:50%;vertical-align:1px;background:var(--dsw-alias-label-caption)}
+.dsh-exp-metric:nth-child(1) .dsh-exp-metric-label::before{background:var(--dsw-alias-brand-primary)}
+.dsh-exp-metric:nth-child(2) .dsh-exp-metric-label::before{background:var(--dsw-alias-state-success-primary)}
+.dsh-exp-metric:nth-child(3) .dsh-exp-metric-label::before{background:var(--dsw-alias-state-warn-primary)}
+.dsh-exp-metric:nth-child(4) .dsh-exp-metric-label::before{background:var(--dsw-alias-state-business-primary)}
+.dsh-exp-metric-value{font-size:14px;font-weight:500;line-height:22px;font-variant-numeric:tabular-nums}
+.dsh-exp-pricing{--exp-accent:var(--dsw-alias-state-warn-primary);display:flex;flex-direction:column;padding:16px 18px;margin-bottom:24px}
 .dsh-exp-pricing-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
 .dsh-exp-pricing-actions{display:flex;align-items:center;gap:10px}
 .dsh-exp-pricing-status{margin:6px 0 0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-.dsh-exp-pricing-models{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+.dsh-exp-pricing-models{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .dsh-exp-pricing-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 16px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-.dsh-exp-pricing-model{color:var(--dsw-alias-label-primary);font-weight:500}
+.dsh-exp-pricing-model{padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:11px;font-weight:600;line-height:18px}
 .dsh-exp-pricing-price{white-space:nowrap}
-.dsh-exp-pricing-price b{color:var(--dsw-alias-label-primary);font-weight:500;font-variant-numeric:tabular-nums}
-.dsh-exp-select{height:32px;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer}
-.dsh-exp-select:focus-visible,.dsh-exp-button:focus-visible,.dsh-exp-link:focus-visible{outline-offset:1px}
-.dsh-exp-rate{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;width:100%;margin-top:10px;padding-top:10px;border-top:.5px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.dsh-exp-pricing-price b{color:var(--dsw-alias-label-primary);font-weight:600;font-variant-numeric:tabular-nums}
+.dsh-exp-price-hit b{color:var(--dsw-alias-state-success-primary)}
+.dsh-exp-price-miss b{color:var(--dsw-alias-state-warn-primary)}
+.dsh-exp-price-out b{color:var(--dsw-alias-brand-primary)}
+.dsh-exp-select{height:32px;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer}
+.dsh-exp-select:hover{border-color:var(--dsw-alias-border-l3)}
+.dsh-exp-select:focus-visible,.dsh-exp-button:focus-visible,.dsh-exp-link:focus-visible,.dsh-exp-sort:focus-visible,.dsh-exp-search-clear:focus-visible{outline:2px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent);outline-offset:1px}
+.dsh-exp-rate{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;width:100%;margin-top:12px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
 .dsh-exp-rate-label{color:var(--dsw-alias-label-tertiary)}
 .dsh-exp-rate-values{font-variant-numeric:tabular-nums}
 .dsh-exp-rate-updated{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-table-wrap{overflow:hidden;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1)}
+.dsh-exp-table-wrap{overflow:hidden;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .dsh-exp-table-scroll{overflow-x:auto}
-.dsh-exp-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px;font-variant-numeric:tabular-nums}
-.dsh-exp-table th{padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:500;line-height:18px;text-align:left;white-space:nowrap}
+.dsh-exp-table{width:100%;min-width:700px;border-collapse:collapse;table-layout:fixed;font-size:13px;font-variant-numeric:tabular-nums}
+.dsh-exp-table th{padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500;line-height:18px;text-align:left;white-space:nowrap}
+.dsh-exp-table th[aria-sort="ascending"],.dsh-exp-table th[aria-sort="descending"]{color:var(--dsw-alias-label-primary)}
 .dsh-exp-table td{padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l1);vertical-align:middle}
 .dsh-exp-table tbody tr:last-child td{border-bottom:none}
-.dsh-exp-table tbody tr:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-exp-table tbody tr:hover{background:var(--dsw-alias-interactive-bg-hover);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 4%,transparent)}
 .dsh-exp-num{text-align:right;white-space:nowrap}
 .dsh-exp-session{display:flex;align-items:center;gap:8px;min-width:0}
-.dsh-exp-session-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsh-exp-badge{flex:none;padding:0 6px;border-radius:var(--dsw-radius-xs);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:18px;white-space:nowrap}
+.dsh-exp-session-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.dsh-exp-badge{flex:none;padding:0 7px;border-radius:999px;background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 13%,var(--dsw-alias-bg-layer-1));color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 75%,var(--dsw-alias-label-primary));font-size:11px;line-height:18px;white-space:nowrap}
 .dsh-exp-date{color:var(--dsw-alias-label-secondary);white-space:nowrap}
-.dsh-exp-cost-cell{white-space:nowrap}
+.dsh-exp-cost-cell{white-space:nowrap;font-weight:600;color:color-mix(in srgb,var(--dsw-alias-brand-primary) 70%,var(--dsw-alias-label-primary))}
 .dsh-exp-dash{color:var(--dsw-alias-label-tertiary)}
 .dsh-exp-state{padding:32px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;text-align:center}
 .dsh-exp-state-actions{display:flex;justify-content:center;margin-top:12px}
-.dsh-exp-warning{padding:8px 12px;border-bottom:.5px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-state-warn-primary);font-size:12px;line-height:18px}
+.dsh-exp-warning{padding:8px 12px;border-bottom:.5px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 10%,var(--dsw-alias-bg-layer-1));color:var(--dsw-alias-state-warn-primary);font-size:12px;line-height:18px}
 .dsh-exp-stale{color:var(--dsw-alias-state-warn-primary)}
 .dsh-exp-alert{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;padding:32px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
 .dsh-exp-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .dsh-exp-balance{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:12px;margin-bottom:16px}
 .dsh-exp-wallets{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;align-content:start}
-.dsh-exp-wallet-total{margin-top:10px;font-size:22px;font-weight:600;line-height:30px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-wallet-code{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:18px;letter-spacing:.04em;white-space:nowrap}
+.dsh-exp-wallets .dsh-exp-card[data-currency="USD"]{--exp-accent:var(--dsw-alias-state-success-primary);background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-state-success-primary) 5%,var(--dsw-alias-bg-layer-1)) 0,var(--dsw-alias-bg-layer-1) 62%)}
+.dsh-exp-wallets .dsh-exp-card[data-currency="CNY"]{--exp-accent:var(--dsw-alias-state-warn-primary);background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-state-warn-primary) 5%,var(--dsw-alias-bg-layer-1)) 0,var(--dsw-alias-bg-layer-1) 62%)}
+.dsh-exp-wallet-total{margin-top:10px;font-size:24px;font-weight:600;line-height:32px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dsh-exp-wallet-code{padding:1px 7px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:10px;line-height:18px;letter-spacing:.06em;white-space:nowrap}
 .dsh-exp-wallet-lines{display:flex;flex-wrap:wrap;gap:2px 14px;margin-top:8px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
 .dsh-exp-wallet-line b{color:var(--dsw-alias-label-primary);font-weight:500;font-variant-numeric:tabular-nums}
 .dsh-exp-wallet-updated{grid-column:1/-1;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
 .dsh-exp-wallet-state{margin:8px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
-.dsh-exp-topups{padding:16px 18px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);box-sizing:border-box;min-width:0}
+.dsh-exp-topups{--exp-accent:var(--dsw-alias-state-success-primary);padding:16px 18px}
 .dsh-exp-topups-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.dsh-exp-link{color:var(--dsw-alias-brand-primary);font-size:13px;line-height:20px;white-space:nowrap;text-decoration:none;border-radius:var(--dsw-radius-xs)}
+.dsh-exp-link{color:var(--dsw-alias-link);font-size:13px;line-height:20px;white-space:nowrap;text-decoration:none;border-radius:4px}
 .dsh-exp-link:hover{text-decoration:underline}
 .dsh-exp-topup-list{display:flex;flex-direction:column;margin:10px 0 0;padding:0;list-style:none}
 .dsh-exp-topup{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:.5px solid var(--dsw-alias-border-l1);font-size:13px;line-height:20px}
 .dsh-exp-topup:last-child{border-bottom:none;padding-bottom:0}
 .dsh-exp-topup-time{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-topup-amount{font-variant-numeric:tabular-nums;white-space:nowrap}
+.dsh-exp-topup-amount{color:var(--dsw-alias-state-success-primary);font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 .dsh-exp-note{margin:10px 0 0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-@media (max-width:900px){.dsh-exp-balance{grid-template-columns:minmax(0,1fr)}}
+.dsh-exp-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
+.dsh-exp-search{position:relative;display:flex;flex:1 1 220px;align-items:center;min-width:150px;max-width:340px;color:var(--dsw-alias-label-tertiary)}
+.dsh-exp-search-icon{position:absolute;left:10px;display:flex;pointer-events:none}
+.dsh-exp-search input{box-sizing:border-box;width:100%;height:32px;padding:0 30px 0 32px;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none}
+.dsh-exp-search input::-webkit-search-cancel-button{display:none}
+.dsh-exp-search input::placeholder{color:var(--dsw-alias-label-tertiary)}
+.dsh-exp-search input:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent)}
+.dsh-exp-search-clear{position:absolute;right:3px;display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:16px;line-height:1;cursor:pointer}
+.dsh-exp-search-clear:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsh-exp-toggle{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;white-space:nowrap;cursor:pointer;user-select:none}
+.dsh-exp-toggle:hover{color:var(--dsw-alias-label-primary)}
+.dsh-exp-toggle input{width:14px;height:14px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
+.dsh-exp-count{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dsh-exp-count b{color:var(--dsw-alias-label-primary);font-weight:600}
+.dsh-exp-sort{display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:12px;line-height:18px;white-space:nowrap;cursor:pointer}
+.dsh-exp-sort:hover{color:var(--dsw-alias-label-primary)}
+.dsh-exp-sort-ind{color:var(--dsw-alias-brand-primary);font-size:10px;line-height:1}
+.dsh-exp-table th.dsh-exp-num .dsh-exp-sort{justify-content:flex-end;width:100%}
+.dsh-exp-no-matches{padding:24px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;text-align:center}
+.dsh-exp-no-matches .dsh-exp-button{margin-top:10px}
+@media (max-width:900px){.dsh-exp-balance{grid-template-columns:minmax(0,1fr)}.dsh-exp-table th,.dsh-exp-table td{padding-right:8px;padding-left:8px}}
 @media (max-width:760px){.dsh-exp-cards{grid-template-columns:1fr}.dsh-exp-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `
 
@@ -453,8 +506,80 @@ window.__ModuleLoader__.load({
       return (amount * from) / to
     }
 
+    /** Every sortable Session-table column, in header order. */
+    const SORT_KEYS = ['session', 'date', 'input', 'output', 'requests', 'toolCalls', 'cost']
+
+    /** The remembered sort choice, defaulting to newest Sessions first. */
+    function readTableSort() {
+      const parsed = readJson(TABLE_SORT_KEY)
+      if (parsed === null || typeof parsed !== 'object') return { key: 'date', direction: 'desc' }
+      return {
+        key: SORT_KEYS.includes(parsed.key) ? parsed.key : 'date',
+        direction: parsed.direction === 'asc' ? 'asc' : 'desc',
+      }
+    }
+
+    /** The remembered table toggles; both start off so the first view shows every Session. */
+    function readTableFilters() {
+      const parsed = readJson(TABLE_FILTERS_KEY)
+      if (parsed === null || typeof parsed !== 'object') return { onlyToday: false, hideSubagents: false }
+      return { onlyToday: parsed.onlyToday === true, hideSubagents: parsed.hideSubagents === true }
+    }
+
+    /** The comparable value of one row for one column; `null` means "no price to compare". */
+    function sortValue(row, key) {
+      switch (key) {
+        case 'session':
+          return String(row.title ?? '').toLowerCase()
+        case 'date':
+          return Number(row.createdAt) || 0
+        case 'input':
+          return (Number(row.input) || 0) + (Number(row.cacheHit) || 0)
+        case 'output':
+          return Number(row.output) || 0
+        case 'requests':
+          return Number(row.requests) || 0
+        case 'toolCalls':
+          return Number(row.toolCalls) || 0
+        case 'cost':
+          return row.costUsd === null || row.costUsd === undefined ? null : Number(row.costUsd)
+        default:
+          return 0
+      }
+    }
+
+    /**
+     * Sort Session rows by one column, keeping the input order for equal values.
+     * A row without a known price always sinks to the bottom, whichever direction is chosen.
+     */
+    function sortRows(rows, key, direction) {
+      const factor = direction === 'asc' ? 1 : -1
+      return rows
+        .map((row, index) => ({ row, index }))
+        .sort((left, right) => {
+          const a = sortValue(left.row, key)
+          const b = sortValue(right.row, key)
+          if (a === null && b === null) return left.index - right.index
+          if (a === null) return 1
+          if (b === null) return -1
+          const compared = typeof a === 'string' ? a.localeCompare(b, 'ru') : a - b
+          return compared === 0 ? left.index - right.index : compared * factor
+        })
+        .map(entry => entry.row)
+    }
+
+    /** Whether a Session burned anything today, the meaning of the "today" toggle. */
+    function activeToday(row) {
+      return (Number(row.todayRequests) || 0) > 0
+        || (Number(row.todayToolCalls) || 0) > 0
+        || (Number(row.todayInput) || 0) > 0
+        || (Number(row.todayCacheHit) || 0) > 0
+        || (Number(row.todayOutput) || 0) > 0
+    }
+
     function Metric(props) {
-      return h('div', { className: 'dsh-exp-metric', ...(typeof props.title === 'string' ? { title: props.title } : {}) },
+      const title = typeof props.title === 'string' ? props.title : props.label
+      return h('div', { className: 'dsh-exp-metric', ...(typeof title === 'string' ? { title } : {}) },
         h('span', { className: 'dsh-exp-metric-label' }, props.label),
         h('span', { className: 'dsh-exp-metric-value' }, props.value))
     }
@@ -509,7 +634,7 @@ window.__ModuleLoader__.load({
 
     function WalletCard(props) {
       const t = props.t
-      return h('section', { className: 'dsh-exp-card' },
+      return h('section', { className: 'dsh-exp-card', 'data-currency': props.currency },
         h('div', { className: 'dsh-exp-card-head' },
           h('span', { className: 'dsh-exp-card-title' }, props.title),
           h('span', { className: 'dsh-exp-wallet-code' }, props.currency)),
@@ -627,9 +752,9 @@ window.__ModuleLoader__.load({
               className: 'dsh-exp-pricing-row',
             },
               h('span', { className: 'dsh-exp-pricing-model' }, model.id),
-              h('span', { className: 'dsh-exp-pricing-price' }, `${t('pricingCacheHit')} `, h('b', null, value(model.cacheHit ? model.cacheHit[period] : undefined))),
-              h('span', { className: 'dsh-exp-pricing-price' }, `${t('pricingCacheMiss')} `, h('b', null, value(model.cacheMiss ? model.cacheMiss[period] : undefined))),
-              h('span', { className: 'dsh-exp-pricing-price' }, `${t('pricingOutput')} `, h('b', null, value(model.output ? model.output[period] : undefined)))))),
+              h('span', { className: 'dsh-exp-pricing-price dsh-exp-price-hit' }, `${t('pricingCacheHit')} `, h('b', null, value(model.cacheHit ? model.cacheHit[period] : undefined))),
+              h('span', { className: 'dsh-exp-pricing-price dsh-exp-price-miss' }, `${t('pricingCacheMiss')} `, h('b', null, value(model.cacheMiss ? model.cacheMiss[period] : undefined))),
+              h('span', { className: 'dsh-exp-pricing-price dsh-exp-price-out' }, `${t('pricingOutput')} `, h('b', null, value(model.output ? model.output[period] : undefined)))))),
         h('p', { className: 'dsh-exp-note' }, t('pricingNote')),
         h(RateLine, { rates: props.rates, t }))
     }
@@ -703,6 +828,9 @@ window.__ModuleLoader__.load({
         return CURRENCIES.includes(stored) ? stored : CURRENCIES[0]
       })
       const [busy, setBusy] = React.useState(false)
+      const [query, setQuery] = React.useState('')
+      const [sort, setSort] = React.useState(readTableSort)
+      const [filters, setFilters] = React.useState(readTableFilters)
       const mounted = React.useRef(true)
 
       React.useEffect(() => () => {
@@ -780,15 +908,77 @@ window.__ModuleLoader__.load({
           }
         : data.totals
       const rows = data === null ? [] : data.sessions
+      const needle = query.trim().toLowerCase()
+      const visibleRows = sortRows(
+        rows.filter(row => {
+          if (filters.hideSubagents === true && row.subagent === true) return false
+          if (filters.onlyToday === true && !activeToday(row)) return false
+          return needle === '' || String(row.title ?? '').toLowerCase().includes(needle)
+        }),
+        sort.key,
+        sort.direction,
+      )
+      let shownCostUsd = 0
+      let shownCostKnown = visibleRows.length > 0
+      for (const row of visibleRows) {
+        if (row.costUsd === null || row.costUsd === undefined) {
+          shownCostKnown = false
+          break
+        }
+        shownCostUsd += Number(row.costUsd) || 0
+      }
+      const shownCost = shownCostKnown ? toDisplay(shownCostUsd) : null
+
+      /** Remember the new sort; the first click on a column picks its natural direction. */
+      const toggleSort = (key) => {
+        const direction = sort.key === key
+          ? (sort.direction === 'asc' ? 'desc' : 'asc')
+          : (key === 'session' ? 'asc' : 'desc')
+        const next = { key, direction }
+        setSort(next)
+        writeJson(TABLE_SORT_KEY, next)
+      }
+
+      /** Flip one table toggle and persist both, so the view survives a reload. */
+      const setFilter = (key, value) => {
+        const next = { ...filters, [key]: value }
+        setFilters(next)
+        writeJson(TABLE_FILTERS_KEY, next)
+      }
+
+      /** Drop the query and both toggles; the column sort stays as the user set it. */
+      const resetFilters = () => {
+        const next = { onlyToday: false, hideSubagents: false }
+        setQuery('')
+        setFilters(next)
+        writeJson(TABLE_FILTERS_KEY, next)
+      }
+
+      /** One sortable column header, marked with its direction when it is the active column. */
+      const column = (key, label, numeric) => h('th', {
+        scope: 'col',
+        ...(numeric === true ? { className: 'dsh-exp-num' } : {}),
+        'aria-sort': sort.key === key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none',
+      },
+        h('button', {
+          type: 'button',
+          className: 'dsh-exp-sort',
+          title: `${t('sortBy')}: ${label}${sort.key === key ? ` · ${sort.direction === 'asc' ? t('ascending') : t('descending')}` : ''}`,
+          onClick: () => toggleSort(key),
+        }, label, sort.key === key
+          ? h('span', { className: 'dsh-exp-sort-ind', 'aria-hidden': true }, sort.direction === 'asc' ? '▲' : '▼')
+          : null))
 
       return h('section', { className: 'dsh-exp-page', 'aria-label': t('title') },
         h('style', null, CSS),
         h('div', { className: 'dsh-exp-scroll' },
           h('div', { className: 'dsh-exp-content' },
             h('div', { className: 'dsh-exp-heading' },
-              h('div', null,
-                h('h1', null, t('title')),
-                h('p', { className: 'dsh-exp-sub' }, t('subtitle'))),
+              h('div', { className: 'dsh-exp-heading-main' },
+                h('span', { className: 'dsh-exp-logo' }, h(ExpensesIcon, { size: 20 })),
+                h('div', null,
+                  h('h1', null, t('title')),
+                  h('p', { className: 'dsh-exp-sub' }, t('subtitle')))),
               h('div', { className: 'dsh-exp-actions' },
                 snapshot.updatedAt > 0
                   ? h('span', { className: 'dsh-exp-updated' }, `${t('updatedPrefix')} ${timeFormat.format(new Date(snapshot.updatedAt))}`)
@@ -822,6 +1012,49 @@ window.__ModuleLoader__.load({
               t,
             }),
             h('div', { className: 'dsh-exp-table-wrap' },
+              rows.length > 0
+                ? h('div', { className: 'dsh-exp-toolbar' },
+                    h('div', { className: 'dsh-exp-search' },
+                      h('span', { className: 'dsh-exp-search-icon', 'aria-hidden': true },
+                        h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', focusable: false },
+                          h('circle', { cx: 7, cy: 7, r: 4.5, stroke: 'currentColor', strokeWidth: 1.4 }),
+                          h('path', { d: 'M10.5 10.5 13.5 13.5', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round' }))),
+                      h('input', {
+                        type: 'search',
+                        value: query,
+                        placeholder: t('search'),
+                        'aria-label': t('search'),
+                        onChange: event => setQuery(event.target.value),
+                      }),
+                      query === ''
+                        ? null
+                        : h('button', {
+                            type: 'button',
+                            className: 'dsh-exp-search-clear',
+                            title: t('searchClear'),
+                            'aria-label': t('searchClear'),
+                            onClick: () => setQuery(''),
+                          }, '×')),
+                    h('label', { className: 'dsh-exp-toggle' },
+                      h('input', {
+                        type: 'checkbox',
+                        checked: filters.onlyToday,
+                        onChange: event => setFilter('onlyToday', event.target.checked),
+                      }),
+                      t('onlyToday')),
+                    h('label', { className: 'dsh-exp-toggle' },
+                      h('input', {
+                        type: 'checkbox',
+                        checked: filters.hideSubagents,
+                        onChange: event => setFilter('hideSubagents', event.target.checked),
+                      }),
+                      t('hideSubagents')),
+                    h('span', { className: 'dsh-exp-count' },
+                      `${t('shown')} `,
+                      h('b', null, formatTokens(visibleRows.length)),
+                      ` ${t('of')} ${formatTokens(rows.length)}`,
+                      shownCost === null ? null : ` · ${t('shownCost')}: ${formatMoney(shownCost, displaySymbol)}`))
+                : null,
               snapshot.error !== null && snapshot.data !== null
                 ? h('div', { className: 'dsh-exp-warning' }, `${t('loadFailed')} ${snapshot.error}`)
                 : null,
@@ -836,27 +1069,32 @@ window.__ModuleLoader__.load({
               snapshot.status === 'ready' && rows.length === 0
                 ? h('div', { className: 'dsh-exp-state' }, t('noSessions'))
                 : null,
-              rows.length > 0
+              rows.length > 0 && visibleRows.length === 0
+                ? h('div', { className: 'dsh-exp-no-matches' },
+                    h('div', null, t('noMatches')),
+                    h('button', { type: 'button', className: 'dsh-exp-button', onClick: resetFilters }, t('resetFilters')))
+                : null,
+              visibleRows.length > 0
                 ? h('div', { className: 'dsh-exp-table-scroll' },
                     h('table', { className: 'dsh-exp-table' },
                       h('colgroup', null,
-                        h('col', { style: { width: '34%' } }),
-                        h('col', { style: { width: '12%' } }),
-                        h('col', { style: { width: '12%' } }),
-                        h('col', { style: { width: '12%' } }),
-                        h('col', { style: { width: '9%' } }),
+                        h('col', { style: { width: '32%' } }),
                         h('col', { style: { width: '10%' } }),
-                        h('col', { style: { width: '11%' } })),
+                        h('col', { style: { width: '12%' } }),
+                        h('col', { style: { width: '11%' } }),
+                        h('col', { style: { width: '9%' } }),
+                        h('col', { style: { width: '14%' } }),
+                        h('col', { style: { width: '12%' } })),
                       h('thead', null,
                         h('tr', null,
-                          h('th', { scope: 'col' }, t('session')),
-                          h('th', { scope: 'col' }, t('date')),
-                          h('th', { scope: 'col', className: 'dsh-exp-num' }, t('input')),
-                          h('th', { scope: 'col', className: 'dsh-exp-num' }, t('output')),
-                          h('th', { scope: 'col', className: 'dsh-exp-num' }, t('requests')),
-                          h('th', { scope: 'col', className: 'dsh-exp-num' }, t('toolCalls')),
-                          h('th', { scope: 'col', className: 'dsh-exp-num' }, t('cost')))),
-                      h('tbody', null, rows.map(row => h(SessionRow, {
+                          column('session', t('session'), false),
+                          column('date', t('date'), false),
+                          column('input', t('input'), true),
+                          column('output', t('output'), true),
+                          column('requests', t('requests'), true),
+                          column('toolCalls', t('toolCalls'), true),
+                          column('cost', t('cost'), true))),
+                      h('tbody', null, visibleRows.map(row => h(SessionRow, {
                         key: row.id,
                         row,
                         cost: toDisplay(row.costUsd),

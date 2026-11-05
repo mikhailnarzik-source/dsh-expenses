@@ -1,6 +1,6 @@
 {
   "name": "dsh-expenses",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Russian-language Expenses panel: account balance in USD/CNY, token usage, model requests, tool calls and estimated cost for every Session.",
   "type": "module",
