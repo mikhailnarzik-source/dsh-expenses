@@ -1,0 +1,7 @@
+node_modules/
+*.log
+*.zip
+*.bak
+*.bak-*
+Thumbs.db
+desktop.ini
