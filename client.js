@@ -21,8 +21,14 @@ window.__ModuleLoader__.load({
     const BALANCE_ROUTE = '/api/expenses.balance'
     /** Host route for the approximate currency rates. */
     const RATES_ROUTE = '/api/expenses.rates'
+    /** Host routes for the plugin self-update checks and installation. */
+    const UPDATE_STATUS_ROUTE = '/api/expenses.update'
+    const UPDATE_CHECK_ROUTE = '/api/expenses.update.check'
+    const UPDATE_APPLY_ROUTE = '/api/expenses.update.apply'
+    /** A dismissed offer is remembered per available version. */
+    const UPDATE_DISMISS_KEY = 'dsh-expenses:update-dismissed'
     /** Build identity reported to the platform on balance requests. */
-    const CLIENT_VERSION = '0.3.1'
+    const CLIENT_VERSION = '0.4.0'
     const CURRENCY_KEY = 'dsh-expenses:currency'
     const CURRENCIES = ['₽', '$', '¥']
     /** Currency symbol ↔ ISO code, the vocabulary the rate line and the price conversion use. */
@@ -115,6 +121,23 @@ window.__ModuleLoader__.load({
       sortBy: 'Сортировать',
       ascending: 'по возрастанию',
       descending: 'по убыванию',
+      version: 'Версия',
+      checkUpdates: 'Проверить обновления',
+      checkingUpdates: 'Проверяю…',
+      updateAvailable: 'Доступно обновление',
+      updateCurrent: 'Установлена последняя версия.',
+      updateFailed: 'Не удалось проверить обновления',
+      installUpdate: 'Установить',
+      installingUpdate: 'Устанавливаю…',
+      later: 'Позже',
+      reloadPage: 'Перезагрузить',
+      updateInstalled: 'Обновление установлено.',
+      restartHint: 'Перезапустите DSH или обновите страницу, чтобы загрузить новую версию.',
+      updateDirty: 'Есть локальные изменения — обновление остановлено.',
+      updateNotes: 'Что нового',
+      newCommits: 'новых коммитов',
+      behindPrefix: 'позади на',
+      updateClose: 'Скрыть предложение',
     }
 
     const CSS = `
@@ -126,7 +149,7 @@ window.__ModuleLoader__.load({
 .dsh-exp-logo{display:flex;flex:none;align-items:center;justify-content:center;width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--dsw-alias-brand-primary),color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,#8b5cf6));color:var(--dsw-alias-label-primary-inverted);box-shadow:0 4px 12px color-mix(in srgb,var(--dsw-alias-brand-primary) 26%,transparent)}
 .dsh-exp-heading h1{margin:0;font-size:22px;font-weight:600;line-height:30px;letter-spacing:-.01em}
 .dsh-exp-sub{margin:2px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
-.dsh-exp-actions{display:flex;flex:none;align-items:center;gap:12px}
+.dsh-exp-actions{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:12px}
 .dsh-exp-updated{color:var(--dsw-alias-label-tertiary);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .dsh-exp-button{appearance:none;height:32px;padding:0 14px;border:.5px solid transparent;border-radius:8px;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-inverted);font:inherit;font-size:13px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;box-shadow:0 1px 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
 .dsh-exp-button:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}
@@ -230,6 +253,25 @@ window.__ModuleLoader__.load({
 .dsh-exp-table th.dsh-exp-num .dsh-exp-sort{justify-content:flex-end;width:100%}
 .dsh-exp-no-matches{padding:24px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;text-align:center}
 .dsh-exp-no-matches .dsh-exp-button{margin-top:10px}
+.dsh-exp-button-secondary{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);box-shadow:none}
+.dsh-exp-button-secondary:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-exp-version{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dsh-exp-update-banner{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;box-sizing:border-box;padding:12px 16px;margin-bottom:16px;border:.5px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 38%,var(--dsw-alias-border-l2));border-radius:12px;background:color-mix(in srgb,var(--dsw-alias-brand-primary) 7%,var(--dsw-alias-bg-layer-1))}
+.dsh-exp-update-banner-main{flex:1;min-width:200px}
+.dsh-exp-update-banner-title{font-size:13px;font-weight:600;line-height:20px}
+.dsh-exp-update-banner-text{margin-top:2px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.dsh-exp-update-notes{margin:6px 0 0;padding-left:18px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+.dsh-exp-update-banner-actions{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto}
+.dsh-exp-update-banner-error{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,var(--dsw-alias-border-l2));background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,var(--dsw-alias-bg-layer-1))}
+.dsh-exp-update-toast{position:fixed;bottom:22px;right:22px;z-index:2147483000;box-sizing:border-box;width:min(380px,calc(100vw - 44px));padding:14px 16px;border:.5px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,var(--dsw-alias-border-l2));border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 14px 38px rgba(15,23,42,.18);color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;pointer-events:auto}
+.dsh-exp-update-toast-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.dsh-exp-update-toast-title{font-size:13px;font-weight:600;line-height:20px}
+.dsh-exp-update-toast-versions{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
+.dsh-exp-update-toast-text{margin:6px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.dsh-exp-update-toast-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.dsh-exp-update-close{flex:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:16px;line-height:1;cursor:pointer}
+.dsh-exp-update-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsh-exp-update-current{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
 @media (max-width:900px){.dsh-exp-balance{grid-template-columns:minmax(0,1fr)}.dsh-exp-table th,.dsh-exp-table td{padding-right:8px;padding-left:8px}}
 @media (max-width:760px){.dsh-exp-cards{grid-template-columns:1fr}.dsh-exp-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `
@@ -298,6 +340,59 @@ window.__ModuleLoader__.load({
       if (typeof error === 'string') return error
       if (typeof error.message === 'string' && error.message !== '') return error.message
       return String(error)
+    }
+
+    /** Read the host's cached update snapshot; the host owns the network work. */
+    async function readUpdateStatus() {
+      const response = await fetch(UPDATE_STATUS_ROUTE, { credentials: 'same-origin', cache: 'no-store' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data = await response.json()
+      if (data === null || typeof data !== 'object') throw new Error('unexpected response')
+      return data
+    }
+
+    /** Ask the host to check or install, and read its answer. */
+    async function postUpdate(route, payload) {
+      const response = await fetch(route, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload ?? {}),
+      })
+      let data = null
+      try {
+        data = await response.json()
+      } catch {
+        data = null
+      }
+      if (!response.ok) {
+        throw new Error(data !== null && typeof data === 'object' && typeof data.error === 'string' ? data.error : `HTTP ${response.status}`)
+      }
+      return data
+    }
+
+    /** Poll the host's update snapshot while this component is mounted. */
+    function useUpdateState(pollMs) {
+      const [state, setState] = React.useState({ status: 'loading', data: null, error: null })
+      const refresh = React.useCallback(async () => {
+        try {
+          const data = await readUpdateStatus()
+          setState({ status: 'ready', data, error: null })
+          return data
+        } catch (error) {
+          setState(current => ({ status: current.data === null ? 'error' : 'ready', data: current.data, error: messageOf(error) }))
+          return null
+        }
+      }, [])
+      React.useEffect(() => {
+        void refresh()
+        const timer = setInterval(() => {
+          void refresh()
+        }, pollMs)
+        return () => clearInterval(timer)
+      }, [refresh, pollMs])
+      return [state, refresh]
     }
 
     /** `money` formats one wallet decimal for reading; the stored strings keep full precision. */
@@ -817,6 +912,116 @@ window.__ModuleLoader__.load({
         }))
     }
 
+    /** In-panel update row: available version, progress and a restart hint. */
+    function UpdateBanner(props) {
+      const t = props.t
+      const data = props.data
+      const result = props.result
+      const available = data !== null && data !== undefined && data.available === true
+      const failed = result !== null && result !== undefined && result.ok !== true
+      const installed = result !== null && result !== undefined && result.ok === true && result.restartRequired === true
+      const current = result !== null && result !== undefined && result.ok === true && result.restartRequired !== true
+      const note = typeof props.note === 'string' ? props.note : ''
+      if (!available && !failed && !installed && !current && note === '') return null
+      let title = ''
+      let text = ''
+      if (failed) {
+        title = t('updateFailed')
+        text = messageOf(result.error)
+      } else if (installed) {
+        title = t('updateInstalled')
+        text = t('restartHint')
+      } else if (current) {
+        title = t('updateCurrent')
+        text = ''
+      } else if (available) {
+        title = `${t('updateAvailable')} ${data.latestVersion}`
+        text = `${t('version')} ${data.installedVersion} → ${data.latestVersion}`
+        if (Number(data.behind) > 0) text += ` · ${t('behindPrefix')} ${formatTokens(data.behind)}`
+        if (data.dirty === true) text += ` · ${t('updateDirty')}`
+      } else {
+        text = note
+      }
+      const notes = available && Array.isArray(data.notes) ? data.notes.slice(0, 3) : []
+      return h('section', { className: `dsh-exp-update-banner${failed ? ' dsh-exp-update-banner-error' : ''}` },
+        h('div', { className: 'dsh-exp-update-banner-main' },
+          h('div', { className: 'dsh-exp-update-banner-title' }, title),
+          h('div', { className: 'dsh-exp-update-banner-text' }, text),
+          notes.length === 0
+            ? null
+            : h('ul', { className: 'dsh-exp-update-notes' }, notes.map((line, index) => h('li', { key: index }, line)))),
+        h('div', { className: 'dsh-exp-update-banner-actions' },
+          installed
+            ? h('button', { type: 'button', className: 'dsh-exp-button', onClick: props.onReload }, t('reloadPage'))
+            : null,
+          available && !installed && !current
+            ? h('button', {
+                type: 'button',
+                className: 'dsh-exp-button',
+                disabled: props.busy === true,
+                onClick: props.onInstall,
+              }, props.busy === true ? t('installingUpdate') : t('installUpdate'))
+            : null))
+    }
+
+    /** The startup offer: a fixed card in the app overlay, before the panel is opened. */
+    function UpdateOverlay() {
+      const t = translate
+      const [state] = useUpdateState(120000)
+      const [busy, setBusy] = React.useState(false)
+      const [result, setResult] = React.useState(null)
+      const [dismissed, setDismissed] = React.useState(() => readStored(UPDATE_DISMISS_KEY))
+      const data = state.data
+      const latest = data !== null && data !== undefined && typeof data.latestVersion === 'string' ? data.latestVersion : ''
+      const available = data !== null && data !== undefined && data.available === true
+      const installed = result !== null && result !== undefined && result.ok === true && result.restartRequired === true
+      const current = result !== null && result !== undefined && result.ok === true && result.restartRequired !== true
+      if (current) return null
+      if (installed !== true && !available) return null
+      if (installed !== true && latest !== '' && dismissed === latest) return null
+      const dismiss = () => {
+        if (latest !== '') {
+          store(UPDATE_DISMISS_KEY, latest)
+          setDismissed(latest)
+        }
+      }
+      const install = async () => {
+        setBusy(true)
+        try {
+          setResult(await postUpdate(UPDATE_APPLY_ROUTE, { confirm: true }))
+        } catch (error) {
+          setResult({ ok: false, error: messageOf(error) })
+        } finally {
+          setBusy(false)
+        }
+      }
+      return h('div', { className: 'dsh-exp-update-toast', role: 'status', 'aria-live': 'polite' },
+        h('div', { className: 'dsh-exp-update-toast-head' },
+          h('div', null,
+            h('div', { className: 'dsh-exp-update-toast-title' }, installed ? t('updateInstalled') : t('updateAvailable')),
+            h('div', { className: 'dsh-exp-update-toast-versions' }, `${data.installedVersion} → ${data.latestVersion}`)),
+          h('button', {
+            type: 'button',
+            className: 'dsh-exp-update-close',
+            title: t('updateClose'),
+            'aria-label': t('updateClose'),
+            onClick: dismiss,
+          }, '×')),
+        installed
+          ? h('p', { className: 'dsh-exp-update-toast-text' }, t('restartHint'))
+          : null,
+        h('div', { className: 'dsh-exp-update-toast-actions' },
+          installed
+            ? h('button', { type: 'button', className: 'dsh-exp-button', onClick: () => window.location.reload() }, t('reloadPage'))
+            : h('button', { type: 'button', className: 'dsh-exp-button', disabled: busy, onClick: install }, busy ? t('installingUpdate') : t('installUpdate')),
+          installed
+            ? null
+            : h('button', { type: 'button', className: 'dsh-exp-button dsh-exp-button-secondary', onClick: dismiss }, t('later'))),
+        result !== null && result !== undefined && result.ok !== true
+          ? h('p', { className: 'dsh-exp-update-toast-text' }, messageOf(result.error))
+          : null)
+    }
+
     function ExpensesPage() {
       const t = translate
       const [snapshot, setSnapshot] = React.useState({ data: null, status: 'loading', error: null, updatedAt: 0 })
@@ -831,6 +1036,10 @@ window.__ModuleLoader__.load({
       const [query, setQuery] = React.useState('')
       const [sort, setSort] = React.useState(readTableSort)
       const [filters, setFilters] = React.useState(readTableFilters)
+      const [update, refreshUpdate] = useUpdateState(60000)
+      const [updateBusy, setUpdateBusy] = React.useState(false)
+      const [updateResult, setUpdateResult] = React.useState(null)
+      const [updateNote, setUpdateNote] = React.useState('')
       const mounted = React.useRef(true)
 
       React.useEffect(() => () => {
@@ -954,6 +1163,39 @@ window.__ModuleLoader__.load({
         writeJson(TABLE_FILTERS_KEY, next)
       }
 
+      /** Ask the host for a fresh GitHub check and show the outcome next to the button. */
+      const checkUpdates = async () => {
+        setUpdateBusy(true)
+        setUpdateNote('')
+        setUpdateResult(null)
+        try {
+          const next = await postUpdate(UPDATE_CHECK_ROUTE, {})
+          await refreshUpdate()
+          if (next === null || typeof next !== 'object' || next.available !== true) setUpdateNote(t('updateCurrent'))
+        } catch (error) {
+          setUpdateNote(`${t('updateFailed')}: ${messageOf(error)}`)
+        } finally {
+          setUpdateBusy(false)
+        }
+      }
+
+      /** Install the available update; the host pulls or runs pnpm. */
+      const installUpdate = async () => {
+        setUpdateBusy(true)
+        setUpdateResult(null)
+        setUpdateNote('')
+        try {
+          const answer = await postUpdate(UPDATE_APPLY_ROUTE, { confirm: true })
+          setUpdateResult(answer)
+          if (answer !== null && answer !== undefined && answer.ok === true && answer.restartRequired !== true) setUpdateNote(t('updateCurrent'))
+          await refreshUpdate()
+        } catch (error) {
+          setUpdateResult({ ok: false, error: messageOf(error) })
+        } finally {
+          setUpdateBusy(false)
+        }
+      }
+
       /** One sortable column header, marked with its direction when it is the active column. */
       const column = (key, label, numeric) => h('th', {
         scope: 'col',
@@ -980,9 +1222,18 @@ window.__ModuleLoader__.load({
                   h('h1', null, t('title')),
                   h('p', { className: 'dsh-exp-sub' }, t('subtitle')))),
               h('div', { className: 'dsh-exp-actions' },
+                update.data !== null && update.data !== undefined && typeof update.data.installedVersion === 'string' && update.data.installedVersion !== ''
+                  ? h('span', { className: 'dsh-exp-version' }, `${t('version')} ${update.data.installedVersion}`)
+                  : null,
                 snapshot.updatedAt > 0
                   ? h('span', { className: 'dsh-exp-updated' }, `${t('updatedPrefix')} ${timeFormat.format(new Date(snapshot.updatedAt))}`)
                   : null,
+                h('button', {
+                  type: 'button',
+                  className: 'dsh-exp-button dsh-exp-button-secondary',
+                  disabled: updateBusy,
+                  onClick: checkUpdates,
+                }, updateBusy ? t('checkingUpdates') : t('checkUpdates')),
                 h('button', {
                   type: 'button',
                   className: 'dsh-exp-button',
@@ -993,6 +1244,15 @@ window.__ModuleLoader__.load({
                     void loadRates(true)
                   },
                 }, busy ? t('refreshing') : t('refresh')))),
+            h(UpdateBanner, {
+              data: update.data,
+              result: updateResult,
+              busy: updateBusy,
+              note: updateNote,
+              t,
+              onInstall: installUpdate,
+              onReload: () => window.location.reload(),
+            }),
             h(BalanceSection, { balance, topUps, t }),
             h('div', { className: 'dsh-exp-cards' },
               h(TotalCard, { title: t('today'), totals: totals.today, cost: toDisplay(totals.today.costUsd), symbol: displaySymbol, t }),
@@ -1153,6 +1413,15 @@ window.__ModuleLoader__.load({
           name: 'main',
           key: PANEL_ID,
         }, ExpensesPage))
+        try {
+          ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+            name: 'shell.overlay',
+            id: 'expenses.update',
+            order: 45,
+          }, UpdateOverlay))
+        } catch {
+          // An older host without the shell overlay keeps the in-panel update row.
+        }
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
           name: 'sidebar.panellist',
           id: PANEL_ID,

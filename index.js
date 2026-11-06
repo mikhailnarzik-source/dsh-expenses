@@ -13,6 +13,17 @@
  * the source Session, and counting the copy would double every forked cost.
  */
 
+import { fileURLToPath } from 'node:url'
+import {
+  CHECK_INTERVAL_MS,
+  FAILED_RETRY_MS,
+  STARTUP_DELAY_MS,
+  UPDATE_APPLY_PATH,
+  UPDATE_CHECK_PATH,
+  UPDATE_STATUS_PATH,
+  createUpdateService,
+} from './update.js'
+
 /** Absolute route registered on the browser-authenticated Fetch bridge. */
 export const OVERVIEW_PATH = '/api/expenses.overview'
 
@@ -688,6 +699,7 @@ export function apply(ctx) {
   const balanceCache = { at: 0, value: undefined }
   const ratesCache = { at: 0, value: undefined }
   const pricingCache = { at: 0, value: undefined, modelsJson: null }
+  const updater = createUpdateService({ pluginDir: fileURLToPath(new URL('.', import.meta.url)) })
 
   /** The composed web-fetch service, when this profile mounts one, as a pricing fallback. */
   const webFetchText = async (url) => {
@@ -801,6 +813,66 @@ export function apply(ctx) {
       }
     },
   }), 'expenses: rates route')
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: UPDATE_STATUS_PATH,
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: async () => {
+      const current = updater.snapshot()
+      const retryDue = Number(current.failedAt) > 0 && Date.now() - Number(current.failedAt) > FAILED_RETRY_MS
+      if (current.checkedAt === 0 && current.checking !== true && (Number(current.failedAt) === 0 || retryDue)) {
+        void updater.check({ force: false })
+      }
+      return jsonResponse(updater.snapshot())
+    },
+  }), 'expenses: update status route')
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: UPDATE_CHECK_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: async () => {
+      try {
+        return jsonResponse(await updater.check({ force: true }))
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return jsonResponse({ status: 'error', error: message }, 500)
+      }
+    },
+  }), 'expenses: update check route')
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: UPDATE_APPLY_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: async (request) => {
+      let payload = {}
+      try {
+        payload = (await request.json()) ?? {}
+      } catch {
+        payload = {}
+      }
+      if (payload.confirm !== true) return jsonResponse({ ok: false, error: 'confirmation required' }, 400)
+      try {
+        return jsonResponse(await updater.apply())
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return jsonResponse({ ok: false, error: message, status: updater.snapshot() }, 500)
+      }
+    },
+  }), 'expenses: update apply route')
+  ctx.effect(() => {
+    const initial = setTimeout(() => {
+      void updater.check({ force: false })
+    }, STARTUP_DELAY_MS)
+    initial.unref?.()
+    const timer = setInterval(() => {
+      void updater.check({ force: false })
+    }, CHECK_INTERVAL_MS)
+    timer.unref?.()
+    return () => {
+      clearTimeout(initial)
+      clearInterval(timer)
+    }
+  }, 'expenses: update checks')
 }
 
 export const name = 'expenses'
