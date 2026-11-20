@@ -192,6 +192,26 @@ const PUBLIC_REQUEST_HEADERS = {
 }
 
 /**
+ * Резервная таблица цен: снята с официальной страницы цен и используется,
+ * когда прочитать её онлайн не удалось. Без неё стоимость считалась нулевой,
+ * и карточки «Сегодня» и «За всё время» показывали только токены.
+ */
+export const OFFLINE_PRICING = Object.freeze([
+  {
+    id: 'deepseek-flash',
+    cacheHit: Object.freeze({ peak: 0.006, offPeak: 0.003 }),
+    cacheMiss: Object.freeze({ peak: 0.3, offPeak: 0.15 }),
+    output: Object.freeze({ peak: 1.2, offPeak: 0.6 }),
+  },
+  {
+    id: 'deepseek-v4-pro',
+    cacheHit: Object.freeze({ peak: 0.044, offPeak: 0.022 }),
+    cacheMiss: Object.freeze({ peak: 1.32, offPeak: 0.66 }),
+    output: Object.freeze({ peak: 3.96, offPeak: 1.98 }),
+  },
+])
+
+/**
  * Read the official prices once, trying the markdown page, then the HTML page,
  * and finally the composed web-fetch service when the direct request is refused.
  * @param options.fetch - fetch implementation (tests inject one).
@@ -230,7 +250,9 @@ export async function readPricing(options = {}) {
       reasons.push(`web fetch: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
-  return { status: 'failed', reason: reasons.join('; ') }
+  // Онлайн прочитать не удалось — считаем по резервной таблице, чтобы
+  // стоимость продолжала отображаться, а причина осталась в ответе.
+  return { status: 'ready', models: OFFLINE_PRICING, fetchedAt: Date.now(), source: 'offline', offline: true, reasons }
 }
 
 /**
