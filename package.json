@@ -1,6 +1,6 @@
 {
   "name": "dsh-expenses",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "description": "Russian-language Expenses panel: account balance in USD/CNY, token usage, model requests, tool calls and estimated cost for every Session.",
   "type": "module",
@@ -30,5 +30,6 @@
         "@deepseek-ai/dsh-client-ui-sidebar"
       ]
     }
-  }
+  },
+  "icon": "./icon.svg"
 }
