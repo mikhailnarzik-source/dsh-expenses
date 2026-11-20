@@ -14,6 +14,9 @@
  */
 
 import { fileURLToPath } from 'node:url'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
 import {
   CHECK_INTERVAL_MS,
   FAILED_RETRY_MS,
@@ -715,6 +718,35 @@ export function waitForPricing(promise, cache) {
   })
 }
 
+
+/** Файл кэша курсов: переживает перезапуск и работает без сети. */
+function ratesCacheFile() {
+  const home = process.env.DSH_HOME
+  const base = typeof home === 'string' && home !== '' ? home : join(homedir(), '.dsh')
+  return join(base, 'dsh-expenses', 'rates.json')
+}
+
+/** Прочитать сохранённые курсы последнего успешного запроса. */
+async function readRatesCache() {
+  try {
+    const parsed = JSON.parse(await readFile(ratesCacheFile(), 'utf8'))
+    if (parsed === null || typeof parsed !== 'object' || typeof parsed.rubPerUsd !== 'number') return undefined
+    return parsed
+  } catch {
+    return undefined
+  }
+}
+
+/** Сохранить курсы, чтобы ими можно было пользоваться без сети. */
+async function writeRatesCache(value) {
+  try {
+    await mkdir(dirname(ratesCacheFile()), { recursive: true })
+    await writeFile(ratesCacheFile(), JSON.stringify({ ...value, savedAt: Date.now() }, null, 2) + '\n', 'utf8')
+  } catch {
+    // кэш необязателен
+  }
+}
+
 /** Host plugin body: own the authenticated Fetch routes for the panel's data. */
 export function apply(ctx) {
   const cache = new Map()
@@ -824,13 +856,23 @@ export function apply(ctx) {
         if (value.status === 'ready') {
           ratesCache.at = Date.now()
           ratesCache.value = value
+          // Сохраняем на диск: без сети покажем эти же цифры с датой.
+          void writeRatesCache(value)
           return jsonResponse(value)
         }
         if (ratesCache.value !== undefined) return jsonResponse({ ...ratesCache.value, stale: true })
+        const saved = await readRatesCache()
+        if (saved !== undefined) {
+          return jsonResponse({ ...saved, status: 'ready', stale: true, cachedAt: saved.savedAt })
+        }
         return jsonResponse(value)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         if (ratesCache.value !== undefined) return jsonResponse({ ...ratesCache.value, stale: true })
+        const saved = await readRatesCache()
+        if (saved !== undefined) {
+          return jsonResponse({ ...saved, status: 'ready', stale: true, cachedAt: saved.savedAt })
+        }
         return jsonResponse({ status: 'failed', reason: message }, 500)
       }
     },
