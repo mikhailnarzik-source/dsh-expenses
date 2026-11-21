@@ -1,6 +1,7 @@
 {
   "meta": {
     "title": "Expenses",
-    "description": "Account balance in dollars and yuan, official DeepSeek prices, live currency rates, token usage and estimated cost for every session."
+    "description": "Account balance in dollars and yuan, official DeepSeek prices, live currency rates, token usage and estimated cost for every session.",
+    "detail": "docs/DETAIL.md"
   }
 }
