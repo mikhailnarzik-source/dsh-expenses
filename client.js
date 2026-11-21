@@ -40,7 +40,7 @@ window.__ModuleLoader__.load({
     const WALLETS_KEY = 'dsh-expenses:balance-wallets'
     /** Top-ups observed by this panel, newest first. */
     const TOPUPS_KEY = 'dsh-expenses:topups'
-    const TOPUPS_LIMIT = 20
+    const TOPUPS_LIMIT = 60
     const TOPUPS_SHOWN = 5
     /** Live refresh cadence while the panel is open, and after it was first opened. */
     const BALANCE_REFRESH_MS = 20000
@@ -101,7 +101,7 @@ window.__ModuleLoader__.load({
       bonus: 'Бонусный',
       topUps: 'Последние пополнения',
       topUpsEmpty: 'Пополнения, замеченные плагином, появятся здесь.',
-      topUpsHint: 'Фиксируются по росту пополняемого баланса с момента установки плагина; если пополнение совпало с расходом, сумма может быть неточной.',
+      topUpsHint: 'Фиксируются по росту пополняемого баланса с момента установки плагина; если пополнение совпало с расходом, сумма может быть неточной.', topUpsShowAll: 'Показать всю историю', topUpsShowLess: 'Свернуть историю', topUpsTotal: 'Всего пополнено',
       topUpAction: 'Пополнить',
       total: 'Итого',
       rateLabel: 'Курс',
@@ -745,26 +745,41 @@ window.__ModuleLoader__.load({
 
     function TopUps(props) {
       const t = props.t
-      const entries = props.entries.slice(0, TOPUPS_SHOWN)
+      const [expanded, setExpanded] = React.useState(false)
+      const entries = Array.isArray(props.entries) ? props.entries : []
+      const shown = expanded ? entries : entries.slice(0, TOPUPS_SHOWN)
+      const totals = new Map()
+      for (const entry of entries) {
+        const currency = String(entry?.currency ?? '')
+        const amount = Number(entry?.amount)
+        if (!Number.isFinite(amount) || currency === '') continue
+        totals.set(currency, (totals.get(currency) ?? 0) + amount)
+      }
+      const totalText = [...totals.entries()].map(([currency, amount]) => formatCurrency(amount, currency)).join(' · ')
       return h('section', { className: 'dsh-exp-topups' },
         h('div', { className: 'dsh-exp-topups-head' },
           h('span', { className: 'dsh-exp-card-title' }, t('topUps')),
           typeof props.topUpUrl === 'string' && props.topUpUrl !== ''
-            ? h('a', {
-                className: 'dsh-exp-link',
-                href: props.topUpUrl,
-                target: '_blank',
-                rel: 'noreferrer noopener',
-              }, `${t('topUpAction')} ↗`)
+            ? h('a', { className: 'dsh-exp-link', href: props.topUpUrl, target: '_blank', rel: 'noreferrer noopener' }, `${t('topUpAction')} ↗`)
             : null),
         entries.length === 0
           ? h('p', { className: 'dsh-exp-note' }, t('topUpsEmpty'))
-          : h('ul', { className: 'dsh-exp-topup-list' }, entries.map((entry, index) => h('li', {
-              key: `${entry.at}-${entry.currency}-${index}`,
-              className: 'dsh-exp-topup',
-            },
-              h('span', { className: 'dsh-exp-topup-time' }, formatDateTime(entry.at)),
-              h('span', { className: 'dsh-exp-topup-amount' }, `+ ${formatCurrency(entry.amount, entry.currency)}`)))),
+          : h('div', null,
+              h('ul', { className: 'dsh-exp-topup-list' }, shown.map((entry, index) =>
+                h('li', { key: `${entry.at}-${entry.currency}-${index}`, className: 'dsh-exp-topup' },
+                  h('span', { className: 'dsh-exp-topup-time' }, formatDateTime(entry.at)),
+                  h('span', { className: 'dsh-exp-topup-amount' }, `+ ${formatCurrency(entry.amount, entry.currency)}`)))),
+              entries.length > TOPUPS_SHOWN
+                ? h('button', {
+                    type: 'button',
+                    className: 'dsh-exp-link',
+                    style: { background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit' },
+                    onClick: () => setExpanded((value) => !value),
+                  }, expanded ? t('topUpsShowLess') : `${t('topUpsShowAll')} (${entries.length})`)
+                : null,
+              totalText !== ''
+                ? h('p', { className: 'dsh-exp-note' }, `${t('topUpsTotal')}: ${totalText}`)
+                : null),
         h('p', { className: 'dsh-exp-note' }, t('topUpsHint')))
     }
 
