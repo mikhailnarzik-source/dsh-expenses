@@ -70,7 +70,7 @@ window.__ModuleLoader__.load({
       loading: 'Загрузка…',
       loadFailed: 'Не удалось загрузить данные.',
       retry: 'Повторить',
-      subagent: 'субагент',
+      subagent: 'субагент', archived: 'удалена', archivedHint: 'Удалённые сессии остаются в истории: их стоимость входит в итоги.',
       untitled: 'Без названия',
       currency: 'Валюта',
       pricingTitle: 'Цены DeepSeek за 1 млн токенов',
@@ -715,7 +715,8 @@ window.__ModuleLoader__.load({
         h('td', null,
           h('div', { className: 'dsh-exp-session' },
             h('span', { className: 'dsh-exp-session-title' }, title),
-            row.subagent === true ? h('span', { className: 'dsh-exp-badge' }, t('subagent')) : null)),
+            row.subagent === true ? h('span', { className: 'dsh-exp-badge' }, t('subagent')) : null,
+            row.archived === true ? h('span', { className: 'dsh-exp-badge', title: t('archivedHint') }, t('archived')) : null)),
         h('td', { className: 'dsh-exp-date' }, row.createdAt ? dateFormat.format(new Date(row.createdAt)) : '—'),
         h('td', {
           className: 'dsh-exp-num',

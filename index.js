@@ -30,8 +30,50 @@ import {
 /** Absolute route registered on the browser-authenticated Fetch bridge. */
 export const OVERVIEW_PATH = '/api/expenses.overview'
 
+/** Куда складывается история сессий, чтобы стоимость не пропадала после удаления. */
+export const ARCHIVE_PATH = join(homedir(), '.dsh', 'dsh-expenses', 'sessions.json')
+
+/** Сколько сессий хранить в архиве. */
+export const ARCHIVE_LIMIT = 5000
+
 /** A cached Session row is reused for this long before its log is read again. */
 export const CACHE_TTL_MS = 15000
+
+/** Прочитать архив истории сессий. */
+async function loadArchive() {
+  try {
+    const text = await readFile(ARCHIVE_PATH, 'utf8')
+    const parsed = JSON.parse(text)
+    const sessions = parsed !== null && typeof parsed === 'object' && parsed.sessions !== null && typeof parsed.sessions === 'object' ? parsed.sessions : {}
+    return { version: 1, sessions }
+  } catch {
+    return { version: 1, sessions: {} }
+  }
+}
+
+/** Сохранить архив: не чаще раза в 15 секунд и только при изменениях. */
+let archiveSavedAt = 0
+let archivePending = null
+async function saveArchive(archive) {
+  const now = Date.now()
+  if (now - archiveSavedAt < 15000) {
+    archivePending = archive
+    return
+  }
+  archiveSavedAt = now
+  archivePending = null
+  const ids = Object.keys(archive.sessions)
+  if (ids.length > ARCHIVE_LIMIT) {
+    ids.sort((left, right) => (Number(archive.sessions[right]?.updatedAt) || 0) - (Number(archive.sessions[left]?.updatedAt) || 0))
+    for (const id of ids.slice(ARCHIVE_LIMIT)) delete archive.sessions[id]
+  }
+  try {
+    await mkdir(dirname(ARCHIVE_PATH), { recursive: true })
+    await writeFile(ARCHIVE_PATH, JSON.stringify(archive), 'utf8')
+  } catch {
+    // Архив — удобство; его сбой не должен ломать панель.
+  }
+}
 
 /** Local start of the current day, the boundary of the "today" totals. */
 export function startOfToday(now = Date.now()) {
@@ -497,11 +539,42 @@ export async function readOverview(ctx, options = {}) {
     }
   })
   for (const id of [...cache.keys()]) if (!seen.has(id)) cache.delete(id)
+
+  // История: сохраняем каждую замеченную сессию и добавляем удалённые,
+  // чтобы их стоимость не исчезала из итогов.
+  const archive = await loadArchive()
+  const liveIds = new Set(rows.map((row) => row.id))
+  let archiveChanged = false
+  for (const row of rows) {
+    const snapshot = { ...row }
+    const previous = archive.sessions[row.id]
+    if (previous === undefined || JSON.stringify(previous) !== JSON.stringify(snapshot)) {
+      archive.sessions[row.id] = snapshot
+      archiveChanged = true
+    }
+  }
+  const archivedRows = []
+  for (const [id, stored] of Object.entries(archive.sessions)) {
+    if (liveIds.has(id)) continue
+    if (stored === null || typeof stored !== 'object') continue
+    const row = { ...stored, archived: true }
+    if (Number(row.updatedAt) < todayStart) {
+      row.todayInput = 0
+      row.todayCacheHit = 0
+      row.todayOutput = 0
+      row.todayRequests = 0
+      row.todayToolCalls = 0
+      row.todayCostUsd = 0
+    }
+    archivedRows.push(row)
+  }
+  if (archiveChanged) await saveArchive(archive)
+  const sessions = [...rows, ...archivedRows]
   const totals = {
     today: { input: 0, cacheHit: 0, output: 0, requests: 0, toolCalls: 0, costUsd: 0 },
     all: { input: 0, cacheHit: 0, output: 0, requests: 0, toolCalls: 0, costUsd: 0 },
   }
-  for (const row of rows) {
+  for (const row of sessions) {
     totals.today.input += row.todayInput
     totals.today.cacheHit += row.todayCacheHit
     totals.today.output += row.todayOutput
@@ -524,7 +597,7 @@ export async function readOverview(ctx, options = {}) {
           all: { ...totals.all, costUsd: null },
         }
       : totals,
-    sessions: rows,
+    sessions,
   }
 }
 
