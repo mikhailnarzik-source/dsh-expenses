@@ -747,6 +747,20 @@ async function writeRatesCache(value) {
   }
 }
 
+
+/** Записать событие в общий журнал плагина. */
+async function appendLog(kind, ok, message) {
+  try {
+    const home = process.env.DSH_HOME
+    const base = typeof home === 'string' && home !== '' ? home : join(homedir(), '.dsh')
+    const dir = join(base, 'dsh-expenses')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'log.jsonl'), JSON.stringify({ at: new Date().toISOString(), plugin: 'dsh-expenses', kind, ok, text: message }) + '\n', { encoding: 'utf8', flag: 'a' })
+  } catch {
+    // журнал необязателен
+  }
+}
+
 /** Host plugin body: own the authenticated Fetch routes for the panel's data. */
 export function apply(ctx) {
   const cache = new Map()
@@ -863,8 +877,10 @@ export function apply(ctx) {
         if (ratesCache.value !== undefined) return jsonResponse({ ...ratesCache.value, stale: true })
         const saved = await readRatesCache()
         if (saved !== undefined) {
+          void appendLog('rates', true, 'курсы из кэша: сеть недоступна')
           return jsonResponse({ ...saved, status: 'ready', stale: true, cachedAt: saved.savedAt })
         }
+        void appendLog('rates', false, 'курсы недоступны и кэша нет')
         return jsonResponse(value)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
