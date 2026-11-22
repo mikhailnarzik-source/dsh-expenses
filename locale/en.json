@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Expenses",
-    "description": "Account balance in dollars and yuan, official DeepSeek prices, live currency rates, token usage and estimated cost for every session.",
+    "description": "See what the assistant's answers cost: tokens, requests and an estimated price for every session, in roubles, dollars or yuan. The page also shows your DeepSeek account balance, top-up history, official model prices and live exchange rates. Sign in to your account in Settings to see the balance.",
     "detail": "docs/DETAIL.md"
   }
 }
