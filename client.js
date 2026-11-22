@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
     /** A dismissed offer is remembered per available version. */
     const UPDATE_DISMISS_KEY = 'dsh-expenses:update-dismissed'
     /** Build identity reported to the platform on balance requests. */
-    const CLIENT_VERSION = '0.4.11'
+    const CLIENT_VERSION = '0.4.12'
     const CURRENCY_KEY = 'dsh-expenses:currency'
     const CURRENCIES = ['₽', '$', '¥']
     /** Currency symbol ↔ ISO code, the vocabulary the rate line and the price conversion use. */
@@ -186,8 +186,8 @@ window.__ModuleLoader__.load({
     }
 
     const CSS = `
-.dsh-exp-page{box-sizing:border-box;display:flex;width:100%;min-width:0;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);background:radial-gradient(900px 260px at 12% -90px,color-mix(in srgb,var(--dsw-alias-brand-primary) 10%,transparent),transparent 72%),radial-gradient(760px 220px at 88% -110px,color-mix(in srgb,var(--dsw-alias-state-business-primary) 8%,transparent),transparent 72%),var(--dsw-alias-bg-base);font-size:14px;line-height:1.6}
-.dsh-exp-scroll{position:relative;flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable}
+.dsh-exp-page{box-sizing:border-box;display:flex;width:100%;min-width:0;height:100%;max-height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);background:radial-gradient(900px 260px at 12% -90px,color-mix(in srgb,var(--dsw-alias-brand-primary) 10%,transparent),transparent 72%),radial-gradient(760px 220px at 88% -110px,color-mix(in srgb,var(--dsw-alias-state-business-primary) 8%,transparent),transparent 72%),var(--dsw-alias-bg-base);font-size:14px;line-height:1.6}
+.dsh-exp-scroll{position:relative;flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 .dsh-exp-content{box-sizing:border-box;width:100%;max-width:960px;min-width:0;margin:0 auto;padding:24px 28px 40px}
 .dsh-exp-heading{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px;min-width:0}
 .dsh-exp-heading-main{display:flex;align-items:center;gap:14px;min-width:0}
