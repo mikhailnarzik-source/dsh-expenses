@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
     /** A dismissed offer is remembered per available version. */
     const UPDATE_DISMISS_KEY = 'dsh-expenses:update-dismissed'
     /** Build identity reported to the platform on balance requests. */
-    const CLIENT_VERSION = '0.4.0'
+    const CLIENT_VERSION = '0.4.11'
     const CURRENCY_KEY = 'dsh-expenses:currency'
     const CURRENCIES = ['₽', '$', '¥']
     /** Currency symbol ↔ ISO code, the vocabulary the rate line and the price conversion use. */
@@ -48,6 +48,24 @@ window.__ModuleLoader__.load({
     /** Table sort and filter preferences, remembered per browser like the currency. */
     const TABLE_SORT_KEY = 'dsh-expenses:table-sort'
     const TABLE_FILTERS_KEY = 'dsh-expenses:table-filters'
+    /** Sessions per page and top-ups per page in the two histories. */
+    const SESSION_PAGE_SIZE = 30
+    const TOPUP_PAGE_SIZE = 5
+    /** The period presets in the session-filter row, plus the free date range. */
+    const PERIODS = ['all', 'today', '7d', '30d', 'custom']
+    const DAY_MS = 24 * 60 * 60 * 1000
+    /** The neutral filter state: both toggles off, the whole history, no ranges. */
+    const DEFAULT_FILTERS = Object.freeze({
+      onlyToday: false,
+      hideSubagents: false,
+      period: 'all',
+      dateFrom: '',
+      dateTo: '',
+      costMin: '',
+      costMax: '',
+      tokensMin: '',
+      tokensMax: '',
+    })
 
     /** Every visible string. Registered for `ru` and `en` so the panel stays Russian. */
     const DICT = {
@@ -104,21 +122,45 @@ window.__ModuleLoader__.load({
       bonus: 'Бонусный',
       topUps: 'Последние пополнения',
       topUpsEmpty: 'Пополнения, замеченные плагином, появятся здесь.',
-      topUpsHint: 'Фиксируются по росту пополняемого баланса с момента установки плагина; если пополнение совпало с расходом, сумма может быть неточной.', topUpsShowAll: 'Показать всю историю', topUpsShowLess: 'Свернуть историю', topUpsTotal: 'Всего пополнено',
+      topUpsHint: 'Фиксируются по росту пополняемого баланса с момента установки плагина; если пополнение совпало с расходом, сумма может быть неточной.', topUpsTotal: 'Всего пополнено',
+      records: 'записей',
       topUpAction: 'Пополнить',
+      topUpUnavailable: 'Ссылка на пополнение недоступна: баланс не подключён',
+      balanceFooterHint: 'Откроется сайт пополнения DeepSeek',
+      week: 'За 7 дней',
+      weekHint: 'Стоимость сессий, созданных за последние 7 дней',
+      averageSession: 'Средний расход',
+      averageHint: 'Средняя стоимость сессии за всё время',
       total: 'Итого',
       rateLabel: 'Курс',
       rateLoading: 'Получаю курс…',
       rateFailed: 'Курс недоступен',
       rateUpdatedPrefix: 'курс обновлён в',
       rateStale: 'курс мог устареть',
-      search: 'Поиск по названию сессии',
+      search: 'Поиск по названию или модели',
       searchClear: 'Сбросить поиск',
       onlyToday: 'Только сегодня',
       hideSubagents: 'Без субагентов',
+      period: 'Период',
+      periodAll: 'Всё время',
+      periodToday: 'Сегодня',
+      period7: '7 дней',
+      period30: '30 дней',
+      periodCustom: 'Свои даты',
+      dateFrom: 'Дата с',
+      dateTo: 'Дата по',
+      costFrom: 'Стоимость от',
+      costTo: 'Стоимость до',
+      tokensFrom: 'Токены от',
+      tokensTo: 'Токены до',
+      model: 'Модель',
+      page: 'Стр.',
+      prevPage: 'Предыдущая страница',
+      nextPage: 'Следующая страница',
       shown: 'Показано',
       of: 'из',
       shownCost: 'Стоимость выбранных',
+      rowsRange: 'строки',
       noMatches: 'По этому фильтру сессий нет.',
       resetFilters: 'Сбросить фильтры',
       sortBy: 'Сортировать',
@@ -146,28 +188,40 @@ window.__ModuleLoader__.load({
     const CSS = `
 .dsh-exp-page{box-sizing:border-box;display:flex;width:100%;min-width:0;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);background:radial-gradient(900px 260px at 12% -90px,color-mix(in srgb,var(--dsw-alias-brand-primary) 10%,transparent),transparent 72%),radial-gradient(760px 220px at 88% -110px,color-mix(in srgb,var(--dsw-alias-state-business-primary) 8%,transparent),transparent 72%),var(--dsw-alias-bg-base);font-size:14px;line-height:1.6}
 .dsh-exp-scroll{position:relative;flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable}
-.dsh-exp-content{max-width:1000px;margin:0 auto;padding:0 clamp(24px,4vw,48px) 56px}
-.dsh-exp-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding-top:28px;margin-bottom:22px}
+.dsh-exp-content{box-sizing:border-box;width:100%;max-width:960px;min-width:0;margin:0 auto;padding:24px 28px 40px}
+.dsh-exp-heading{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px;min-width:0}
 .dsh-exp-heading-main{display:flex;align-items:center;gap:14px;min-width:0}
-.dsh-exp-logo{display:flex;flex:none;align-items:center;justify-content:center;width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--dsw-alias-brand-primary),color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,var(--dsw-alias-state-business-primary)));color:var(--dsw-alias-label-primary-inverted);box-shadow:0 4px 12px color-mix(in srgb,var(--dsw-alias-brand-primary) 26%,transparent)}
-.dsh-exp-heading h1{margin:0;font-size:22px;font-weight:600;line-height:30px;letter-spacing:-.01em}
-.dsh-exp-sub{margin:2px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
-.dsh-exp-actions{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:12px}
-.dsh-exp-updated{color:var(--dsw-alias-label-tertiary);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-button{appearance:none;height:32px;padding:0 14px;border:.5px solid transparent;border-radius:8px;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-inverted);font:inherit;font-size:13px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;box-shadow:0 1px 2px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
-.dsh-exp-button:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}
-.dsh-exp-button:disabled{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-tertiary);box-shadow:none;cursor:default}
-.dsh-exp-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px}
-.dsh-exp-card,.dsh-exp-pricing,.dsh-exp-topups{position:relative;box-sizing:border-box;min-width:0;overflow:hidden;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.dsh-exp-heading-text{min-width:0}
+.dsh-exp-logo{display:flex;flex:none;align-items:center;justify-content:center;width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--dsw-alias-brand-primary),color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,var(--dsw-alias-state-business-primary)));color:var(--dsw-alias-label-primary-inverted);box-shadow:0 6px 16px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent);font-size:26px;line-height:1}
+.dsh-exp-heading h1{margin:0;font-size:20px;font-weight:600;line-height:26px;letter-spacing:-.01em;overflow-wrap:anywhere}
+.dsh-exp-sub{margin:2px 0 0;color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:18px;overflow-wrap:anywhere}
+.dsh-exp-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;min-width:0}
+.dsh-exp-updated,.dsh-exp-version{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Кнопки: единая система из .tools/plugin-design-spec-v2.md. */
+.dsh-exp-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:36px;padding:0 14px;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--dsw-alias-label-primary);font-family:inherit;font-size:12.5px;font-weight:600;line-height:1;white-space:nowrap;text-decoration:none;cursor:pointer;appearance:none;-webkit-appearance:none;transition:background-color .12s ease,border-color .12s ease,color .12s ease}
+.dsh-exp-button:disabled{opacity:.55;cursor:default}
+.dsh-exp-button-primary{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 18%,transparent);border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent);color:var(--dsw-alias-brand-primary)}
+.dsh-exp-button-primary:hover:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-brand-primary) 28%,transparent)}
+.dsh-exp-button-secondary{background:transparent;border-color:var(--dsw-alias-border-l4);color:var(--dsw-alias-label-primary)}
+.dsh-exp-button-secondary:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-exp-button-danger{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 16%,transparent);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 50%,transparent);color:var(--dsw-alias-state-error-primary)}
+.dsh-exp-button-danger:hover:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 26%,transparent)}
+.dsh-exp-button-small{height:32px;padding:0 12px}
+.dsh-exp-actions .dsh-exp-button{height:32px;padding:0 12px}
+.dsh-exp-button:focus-visible,.dsh-exp-select:focus-visible,.dsh-exp-input:focus-visible,.dsh-exp-search input:focus-visible,.dsh-exp-sort:focus-visible,.dsh-exp-link:focus-visible,.dsh-exp-search-clear:focus-visible,.dsh-exp-toggle input:focus-visible{outline:2px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent);outline-offset:1px}
+/* Сетки: общий ряд карточек, дети не распирают ячейку. */
+.dsh-exp-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:12px;margin-bottom:16px;align-items:stretch;min-width:0}
+.dsh-exp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px;margin-bottom:16px;align-items:stretch;min-width:0}
+.dsh-exp-card,.dsh-exp-pricing,.dsh-exp-topups{position:relative;box-sizing:border-box;display:flex;flex-direction:column;min-width:0;height:100%;overflow:hidden;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-alias-bg-layer-1)}
 .dsh-exp-card::before,.dsh-exp-pricing::before,.dsh-exp-topups::before{content:'';position:absolute;inset:0 0 auto;height:2px;background:var(--exp-accent,transparent);opacity:.85}
-.dsh-exp-card{padding:16px 18px}
-.dsh-exp-cards .dsh-exp-card:nth-child(1){--exp-accent:var(--dsw-alias-brand-primary);background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-brand-primary) 5%,var(--dsw-alias-bg-layer-1)) 0,var(--dsw-alias-bg-layer-1) 62%)}
-.dsh-exp-cards .dsh-exp-card:nth-child(2){--exp-accent:var(--dsw-alias-state-business-primary);background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-state-business-primary) 5%,var(--dsw-alias-bg-layer-1)) 0,var(--dsw-alias-bg-layer-1) 62%)}
-.dsh-exp-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-.dsh-exp-card-title{color:var(--dsw-alias-label-secondary);font-size:13px;font-weight:500;line-height:20px}
+.dsh-exp-card{padding:16px;gap:12px}
+.dsh-exp-cards .dsh-exp-card:nth-child(1){--exp-accent:var(--dsw-alias-brand-primary)}
+.dsh-exp-cards .dsh-exp-card:nth-child(2){--exp-accent:var(--dsw-alias-state-business-primary)}
+.dsh-exp-card-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;min-width:0}
+.dsh-exp-card-title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600;line-height:20px;overflow-wrap:anywhere}
 .dsh-exp-cost{font-size:22px;font-weight:600;line-height:30px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .dsh-exp-cost-empty{color:var(--dsw-alias-label-tertiary);font-size:22px;font-weight:500;line-height:30px}
-.dsh-exp-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}
+.dsh-exp-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:auto}
 .dsh-exp-metric{display:flex;flex-direction:column;gap:2px;min-width:0}
 .dsh-exp-metric-label{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;white-space:nowrap;text-overflow:ellipsis}
 .dsh-exp-metric-label::before{content:'';display:inline-block;width:6px;height:6px;margin-right:7px;border-radius:50%;vertical-align:1px;background:var(--dsw-alias-label-caption)}
@@ -175,34 +229,87 @@ window.__ModuleLoader__.load({
 .dsh-exp-metric:nth-child(2) .dsh-exp-metric-label::before{background:var(--dsw-alias-state-success-primary)}
 .dsh-exp-metric:nth-child(3) .dsh-exp-metric-label::before{background:var(--dsw-alias-state-warn-primary)}
 .dsh-exp-metric:nth-child(4) .dsh-exp-metric-label::before{background:var(--dsw-alias-state-business-primary)}
-.dsh-exp-metric-value{font-size:14px;font-weight:500;line-height:22px;font-variant-numeric:tabular-nums}
-.dsh-exp-pricing{--exp-accent:var(--dsw-alias-state-warn-primary);display:flex;flex-direction:column;padding:16px 18px;margin-bottom:24px}
-.dsh-exp-pricing-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
-.dsh-exp-pricing-actions{display:flex;align-items:center;gap:10px}
-.dsh-exp-pricing-status{margin:6px 0 0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-.dsh-exp-pricing-models{display:flex;flex-direction:column;gap:6px;margin-top:10px}
-.dsh-exp-pricing-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 16px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-.dsh-exp-pricing-model{padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:11px;font-weight:600;line-height:18px}
+.dsh-exp-metric-value{font-size:14px;font-weight:500;line-height:22px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.dsh-exp-card-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:4px;min-width:0}
+.dsh-exp-card-note{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+/* Цены и курс. */
+.dsh-exp-pricing{--exp-accent:var(--dsw-alias-state-warn-primary);padding:16px;margin-bottom:16px;gap:0}
+.dsh-exp-pricing-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;min-width:0}
+.dsh-exp-pricing-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-width:0}
+.dsh-exp-pricing-status{margin:6px 0 0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+.dsh-exp-pricing-models{display:flex;flex-direction:column;gap:6px;margin-top:10px;min-width:0}
+.dsh-exp-pricing-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 16px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;min-width:0}
+.dsh-exp-pricing-model{padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:11px;font-weight:600;line-height:18px;overflow-wrap:anywhere}
 .dsh-exp-pricing-price{white-space:nowrap}
 .dsh-exp-pricing-price b{color:var(--dsw-alias-label-primary);font-weight:600;font-variant-numeric:tabular-nums}
 .dsh-exp-price-hit b{color:var(--dsw-alias-state-success-primary)}
 .dsh-exp-price-miss b{color:var(--dsw-alias-state-warn-primary)}
 .dsh-exp-price-out b{color:var(--dsw-alias-brand-primary)}
-.dsh-exp-select{height:32px;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer}
-.dsh-exp-select:hover{border-color:var(--dsw-alias-border-l3)}
-.dsh-exp-select:focus-visible,.dsh-exp-button:focus-visible,.dsh-exp-link:focus-visible,.dsh-exp-sort:focus-visible,.dsh-exp-search-clear:focus-visible{outline:2px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent);outline-offset:1px}
-.dsh-exp-rate{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;width:100%;margin-top:12px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.dsh-exp-rate{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;width:100%;margin-top:12px;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;min-width:0}
 .dsh-exp-rate-label{color:var(--dsw-alias-label-tertiary)}
-.dsh-exp-rate-values{font-variant-numeric:tabular-nums}
-.dsh-exp-rate-updated{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-table-wrap{overflow:hidden;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgba(15,23,42,.04)}
-.dsh-exp-table-scroll{overflow-x:auto}
+.dsh-exp-rate-values{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.dsh-exp-rate-updated{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+/* Баланс и пополнения: один общий ряд. */
+.dsh-exp-balance-card{--exp-accent:var(--dsw-alias-brand-primary)}
+.dsh-exp-balance-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px;min-width:0}
+.dsh-exp-wallet-updated{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.dsh-exp-wallets{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:10px;min-width:0}
+.dsh-exp-wallet{display:flex;flex-direction:column;gap:2px;min-width:0;padding:12px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-2)}
+.dsh-exp-wallet-label{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 8px;min-width:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+.dsh-exp-wallet-code{padding:1px 7px;border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:10px;line-height:18px;letter-spacing:.06em;white-space:nowrap}
+.dsh-exp-wallet-total{font-size:22px;font-weight:600;line-height:30px;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsh-exp-wallet-lines{display:flex;flex-wrap:wrap;gap:2px 14px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;min-width:0}
+.dsh-exp-wallet-lines b{color:var(--dsw-alias-label-primary);font-weight:500;font-variant-numeric:tabular-nums}
+.dsh-exp-wallet-state{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;overflow-wrap:anywhere}
+.dsh-exp-balance-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin-top:0}
+.dsh-exp-topups{--exp-accent:var(--dsw-alias-state-success-primary);padding:16px;gap:0}
+.dsh-exp-topups-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 12px;min-width:0}
+.dsh-exp-topup-list{display:flex;flex:1;flex-direction:column;margin:8px 0 0;padding:0;list-style:none;min-width:0}
+.dsh-exp-topup{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0;padding:7px 0;border-bottom:.5px solid var(--dsw-alias-border-l1);font-size:13px;line-height:20px}
+.dsh-exp-topup:last-child{border-bottom:none}
+.dsh-exp-topup-time{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dsh-exp-topup-amount{color:var(--dsw-alias-state-success-primary);font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dsh-exp-topups-empty{display:flex;flex:1;align-items:center;justify-content:center;margin:8px 0 0;text-align:center}
+.dsh-exp-topups-hint{margin-top:auto;padding-top:10px}
+/* Пагинация. */
+.dsh-exp-pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;min-width:0}
+.dsh-exp-pager-label{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.dsh-exp-pager-buttons{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:auto}
+.dsh-exp-pager .dsh-exp-button{min-width:34px;padding:0 10px}
+.dsh-exp-topups .dsh-exp-pager{margin:0 0 0 auto}
+.dsh-exp-topups .dsh-exp-card-footer{margin-top:10px}
+/* Поля, панель фильтров и таблица. */
+.dsh-exp-table-wrap{display:flex;flex-direction:column;min-width:0;overflow:hidden;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-alias-bg-layer-1)}
+.dsh-exp-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l2);min-width:0}
+.dsh-exp-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 12px;padding:0 12px 10px;border-bottom:.5px solid var(--dsw-alias-border-l2);min-width:0}
+.dsh-exp-search{position:relative;display:flex;flex:1 1 220px;align-items:center;min-width:0;max-width:100%;color:var(--dsw-alias-label-tertiary)}
+.dsh-exp-search-icon{position:absolute;left:10px;display:flex;pointer-events:none}
+.dsh-exp-search input{box-sizing:border-box;width:100%;min-width:0;height:34px;padding:0 30px 0 32px;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:12.5px;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none}
+.dsh-exp-search input::-webkit-search-cancel-button{display:none}
+.dsh-exp-search input::placeholder{color:var(--dsw-alias-label-tertiary)}
+.dsh-exp-search input:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent)}
+.dsh-exp-search-clear{position:absolute;right:3px;display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:16px;line-height:1;cursor:pointer}
+.dsh-exp-search-clear:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsh-exp-toggle{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;cursor:pointer;user-select:none;min-width:0}
+.dsh-exp-toggle:hover{color:var(--dsw-alias-label-primary)}
+.dsh-exp-toggle input{width:14px;height:14px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
+.dsh-exp-count{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.dsh-exp-count b{color:var(--dsw-alias-label-primary);font-weight:600}
+.dsh-exp-field{display:flex;flex-direction:column;gap:4px;flex:1 1 104px;min-width:0;max-width:150px}
+.dsh-exp-field-label{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;white-space:nowrap;text-overflow:ellipsis}
+.dsh-exp-input,.dsh-exp-select{box-sizing:border-box;width:100%;min-width:0;height:34px;padding:0 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:12.5px}
+.dsh-exp-select{padding-right:6px;cursor:pointer}
+.dsh-exp-input:hover,.dsh-exp-select:hover{border-color:var(--dsw-alias-border-l3)}
+.dsh-exp-input:focus,.dsh-exp-select:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent)}
+.dsh-exp-input::placeholder{color:var(--dsw-alias-label-tertiary)}
+.dsh-exp-filters .dsh-exp-button{margin-left:auto}
+.dsh-exp-table-scroll{width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden}
 .dsh-exp-table{width:100%;min-width:700px;border-collapse:collapse;table-layout:fixed;font-size:13px;font-variant-numeric:tabular-nums}
 .dsh-exp-table th{padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500;line-height:18px;text-align:left;white-space:nowrap}
 .dsh-exp-table th[aria-sort="ascending"],.dsh-exp-table th[aria-sort="descending"]{color:var(--dsw-alias-label-primary)}
-.dsh-exp-table td{padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l1);vertical-align:middle}
+.dsh-exp-table td{padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l1);vertical-align:middle;min-width:0}
 .dsh-exp-table tbody tr:last-child td{border-bottom:none}
-.dsh-exp-table tbody tr:hover{background:var(--dsw-alias-interactive-bg-hover);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 4%,transparent)}
+.dsh-exp-table tbody tr:hover{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 4%,transparent)}
 .dsh-exp-num{text-align:right;white-space:nowrap}
 .dsh-exp-session{display:flex;align-items:center;gap:8px;min-width:0}
 .dsh-exp-session-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
@@ -210,103 +317,47 @@ window.__ModuleLoader__.load({
 .dsh-exp-date{color:var(--dsw-alias-label-secondary);white-space:nowrap}
 .dsh-exp-cost-cell{white-space:nowrap;font-weight:600;color:color-mix(in srgb,var(--dsw-alias-brand-primary) 70%,var(--dsw-alias-label-primary))}
 .dsh-exp-dash{color:var(--dsw-alias-label-tertiary)}
-.dsh-exp-state{padding:32px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;text-align:center}
-.dsh-exp-state-actions{display:flex;justify-content:center;margin-top:12px}
-.dsh-exp-warning{padding:8px 12px;border-bottom:.5px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 10%,var(--dsw-alias-bg-layer-1));color:var(--dsw-alias-state-warn-primary);font-size:12px;line-height:18px}
-.dsh-exp-stale{color:var(--dsw-alias-state-warn-primary)}
-.dsh-exp-alert{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;padding:32px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
-.dsh-exp-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.dsh-exp-balance{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:12px;margin-bottom:16px}
-.dsh-exp-wallets{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;align-content:start}
-.dsh-exp-wallets .dsh-exp-card[data-currency="USD"]{--exp-accent:var(--dsw-alias-state-success-primary);background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-state-success-primary) 5%,var(--dsw-alias-bg-layer-1)) 0,var(--dsw-alias-bg-layer-1) 62%)}
-.dsh-exp-wallets .dsh-exp-card[data-currency="CNY"]{--exp-accent:var(--dsw-alias-state-warn-primary);background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-state-warn-primary) 5%,var(--dsw-alias-bg-layer-1)) 0,var(--dsw-alias-bg-layer-1) 62%)}
-.dsh-exp-wallet-total{margin-top:10px;font-size:24px;font-weight:600;line-height:32px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-wallet-code{padding:1px 7px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:10px;line-height:18px;letter-spacing:.06em;white-space:nowrap}
-.dsh-exp-wallet-lines{display:flex;flex-wrap:wrap;gap:2px 14px;margin-top:8px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-.dsh-exp-wallet-line b{color:var(--dsw-alias-label-primary);font-weight:500;font-variant-numeric:tabular-nums}
-.dsh-exp-wallet-updated{grid-column:1/-1;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
-.dsh-exp-wallet-state{margin:8px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
-.dsh-exp-topups{--exp-accent:var(--dsw-alias-state-success-primary);padding:16px 18px}
-.dsh-exp-topups-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.dsh-exp-link{color:var(--dsw-alias-link);font-size:13px;line-height:20px;white-space:nowrap;text-decoration:none;border-radius:4px}
-.dsh-exp-link:hover{text-decoration:underline}
-.dsh-exp-topup-list{display:flex;flex-direction:column;margin:10px 0 0;padding:0;list-style:none}
-.dsh-exp-topup{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:.5px solid var(--dsw-alias-border-l1);font-size:13px;line-height:20px}
-.dsh-exp-topup:last-child{border-bottom:none;padding-bottom:0}
-.dsh-exp-topup-time{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-topup-amount{color:var(--dsw-alias-state-success-primary);font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-note{margin:10px 0 0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-.dsh-exp-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
-.dsh-exp-search{position:relative;display:flex;flex:1 1 220px;align-items:center;min-width:150px;max-width:340px;color:var(--dsw-alias-label-tertiary)}
-.dsh-exp-search-icon{position:absolute;left:10px;display:flex;pointer-events:none}
-.dsh-exp-search input{box-sizing:border-box;width:100%;height:32px;padding:0 30px 0 32px;border:.5px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none}
-.dsh-exp-search input::-webkit-search-cancel-button{display:none}
-.dsh-exp-search input::placeholder{color:var(--dsw-alias-label-tertiary)}
-.dsh-exp-search input:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent)}
-.dsh-exp-search-clear{position:absolute;right:3px;display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:16px;line-height:1;cursor:pointer}
-.dsh-exp-search-clear:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsh-exp-toggle{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;white-space:nowrap;cursor:pointer;user-select:none}
-.dsh-exp-toggle:hover{color:var(--dsw-alias-label-primary)}
-.dsh-exp-toggle input{width:14px;height:14px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
-.dsh-exp-count{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-count b{color:var(--dsw-alias-label-primary);font-weight:600}
+.dsh-exp-table-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-top:.5px solid var(--dsw-alias-border-l1);min-width:0}
+.dsh-exp-table-footer .dsh-exp-pager{flex:1 1 100%;margin:0}
 .dsh-exp-sort{display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:12px;line-height:18px;white-space:nowrap;cursor:pointer}
 .dsh-exp-sort:hover{color:var(--dsw-alias-label-primary)}
 .dsh-exp-sort-ind{color:var(--dsw-alias-brand-primary);font-size:10px;line-height:1}
 .dsh-exp-table th.dsh-exp-num .dsh-exp-sort{justify-content:flex-end;width:100%}
 .dsh-exp-no-matches{padding:24px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;text-align:center}
 .dsh-exp-no-matches .dsh-exp-button{margin-top:10px}
-.dsh-exp-button-secondary{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);box-shadow:none}
-.dsh-exp-button-secondary:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
-.dsh-exp-version{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dsh-exp-update-banner{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;box-sizing:border-box;padding:12px 16px;margin-bottom:16px;border:.5px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 38%,var(--dsw-alias-border-l2));border-radius:12px;background:color-mix(in srgb,var(--dsw-alias-brand-primary) 7%,var(--dsw-alias-bg-layer-1))}
-.dsh-exp-update-banner-main{flex:1;min-width:200px}
-.dsh-exp-update-banner-title{font-size:13px;font-weight:600;line-height:20px}
-.dsh-exp-update-banner-text{margin-top:2px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-.dsh-exp-update-notes{margin:6px 0 0;padding-left:18px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-.dsh-exp-update-banner-actions{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto}
-.dsh-exp-update-banner-error{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,var(--dsw-alias-border-l2));background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,var(--dsw-alias-bg-layer-1))}
-.dsh-exp-update-toast{position:fixed;bottom:22px;right:22px;z-index:2147483000;box-sizing:border-box;width:min(380px,calc(100vw - 44px));padding:14px 16px;border:.5px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,var(--dsw-alias-border-l2));border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 14px 38px rgba(15,23,42,.18);color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;pointer-events:auto}
-.dsh-exp-update-toast-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
-.dsh-exp-update-toast-title{font-size:13px;font-weight:600;line-height:20px}
-.dsh-exp-update-toast-versions{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
-.dsh-exp-update-toast-text{margin:6px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-.dsh-exp-update-toast-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.dsh-exp-update-close{flex:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:16px;line-height:1;cursor:pointer}
-.dsh-exp-update-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsh-exp-update-current{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-@media (max-width:900px){.dsh-exp-balance{grid-template-columns:minmax(0,1fr)}.dsh-exp-table th,.dsh-exp-table td{padding-right:8px;padding-left:8px}}
-@media (max-width:760px){.dsh-exp-cards{grid-template-columns:1fr}.dsh-exp-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
-/* Единый стиль страниц плагинов DSH: центр 960, шапка с иконкой, карточки-секции. */
-.dsh-exp-content{max-width:960px;padding:24px 28px 40px}
-.dsh-exp-heading{padding-top:0;margin-bottom:16px;align-items:flex-start;gap:14px}
-.dsh-exp-heading h1{font-size:20px;font-weight:600;line-height:26px}
-.dsh-exp-sub{margin-top:2px;font-size:12.5px;line-height:18px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.dsh-exp-logo{width:52px;height:52px;border-radius:14px;font-size:26px;line-height:1;box-shadow:0 6px 16px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
-.dsh-exp-actions{gap:8px}
-.dsh-exp-button{height:36px;padding:0 14px;border:1px solid transparent;border-radius:10px;background:var(--dsw-alias-brand-primary);color:#fff;font:inherit;font-size:12.5px;font-weight:600;line-height:20px;white-space:nowrap;cursor:pointer;box-shadow:none;transition:background-color .12s ease,border-color .12s ease,color .12s ease}
-.dsh-exp-button:hover:not(:disabled){background:var(--dsw-alias-brand-primary);filter:brightness(1.06)}
-.dsh-exp-button:disabled{opacity:.55;background:var(--dsw-alias-brand-primary);color:#fff;box-shadow:none;cursor:default}
-.dsh-exp-button-secondary{border:1px solid var(--dsw-alias-border-l4);background:transparent;color:var(--dsw-alias-label-primary);box-shadow:none}
-.dsh-exp-button-secondary:hover:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent);filter:none}
-.dsh-exp-button-secondary:disabled{background:transparent;color:var(--dsw-alias-label-tertiary);border-color:var(--dsw-alias-border-l2)}
-.dsh-exp-actions .dsh-exp-button{height:32px;padding:0 12px}
-.dsh-exp-card,.dsh-exp-pricing,.dsh-exp-topups{border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-alias-bg-layer-1)}
-.dsh-exp-card{padding:16px}
-.dsh-exp-pricing,.dsh-exp-topups{padding:16px}
-.dsh-exp-card-head{align-items:center}
-.dsh-exp-card-title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600;line-height:20px}
-.dsh-exp-search input{height:34px;border-radius:9px;background:var(--dsw-alias-bg-layer-2);font-size:12.5px}
-.dsh-exp-select{height:34px;border-radius:9px;background:var(--dsw-alias-bg-layer-2);font-size:12.5px}
-.dsh-exp-table-wrap{border:1px solid var(--dsw-alias-border-l2);border-radius:14px}
-.dsh-exp-update-banner{border-radius:14px}
+.dsh-exp-state{padding:32px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;text-align:center;overflow-wrap:anywhere}
+.dsh-exp-alert{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;padding:32px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;min-width:0}
+.dsh-exp-warning{padding:8px 12px;border-bottom:.5px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 10%,var(--dsw-alias-bg-layer-1));color:var(--dsw-alias-state-warn-primary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+.dsh-exp-stale{color:var(--dsw-alias-state-warn-primary)}
+.dsh-exp-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.dsh-exp-link{color:var(--dsw-alias-link);font-size:13px;line-height:20px;white-space:nowrap;text-decoration:none;border-radius:4px}
+.dsh-exp-link:hover{text-decoration:underline}
 .dsh-exp-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px;white-space:nowrap}
 .dsh-exp-chip::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;background:currentColor}
 .dsh-exp-chip.is-ok{border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 55%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent);color:var(--dsw-alias-state-success-primary)}
 .dsh-exp-chip.is-warn{border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 55%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 14%,transparent);color:var(--dsw-alias-state-warn-primary)}
 .dsh-exp-chip.is-bad{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 55%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);color:var(--dsw-alias-state-error-primary)}
-@media (max-width:760px){.dsh-exp-content{padding:18px 16px 32px}.dsh-exp-heading{gap:10px}.dsh-exp-card,.dsh-exp-pricing,.dsh-exp-topups{padding:14px}}
-`
+/* Баннер и плашка обновления. */
+.dsh-exp-update-banner{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;box-sizing:border-box;padding:12px 16px;margin-bottom:16px;border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 38%,var(--dsw-alias-border-l2));border-radius:14px;background:color-mix(in srgb,var(--dsw-alias-brand-primary) 7%,var(--dsw-alias-bg-layer-1));min-width:0}
+.dsh-exp-update-banner-main{flex:1 1 200px;min-width:0}
+.dsh-exp-update-banner-title{font-size:13px;font-weight:600;line-height:20px;overflow-wrap:anywhere}
+.dsh-exp-update-banner-text{margin-top:2px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+.dsh-exp-update-notes{margin:6px 0 0;padding-left:18px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+.dsh-exp-update-banner-actions{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto}
+.dsh-exp-update-banner-error{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,var(--dsw-alias-border-l2));background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,var(--dsw-alias-bg-layer-1))}
+.dsh-exp-update-toast{position:fixed;bottom:22px;right:22px;z-index:2147483000;box-sizing:border-box;width:min(380px,calc(100vw - 44px));padding:14px 16px;border:1px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,var(--dsw-alias-border-l2));border-radius:14px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 14px 38px rgba(15,23,42,.18);color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;pointer-events:auto}
+.dsh-exp-update-toast-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.dsh-exp-update-toast-title{font-size:13px;font-weight:600;line-height:20px}
+.dsh-exp-update-toast-versions{margin:4px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
+.dsh-exp-update-toast-text{margin:6px 0 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+.dsh-exp-update-toast-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.dsh-exp-update-close{flex:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:16px;line-height:1;cursor:pointer}
+.dsh-exp-update-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsh-exp-update-current{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+/* Адаптив: 900 — одна колонка обзора, 640 — компактные отступы. */
+@media (max-width:900px){.dsh-exp-overview{grid-template-columns:minmax(0,1fr)}.dsh-exp-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.dsh-exp-content{padding:16px 16px 32px}.dsh-exp-heading{gap:10px}.dsh-exp-actions{width:100%;justify-content:flex-start}.dsh-exp-actions .dsh-exp-button{flex:1 1 auto}.dsh-exp-card,.dsh-exp-pricing,.dsh-exp-topups{padding:14px}.dsh-exp-search{flex:1 1 100%}.dsh-exp-count{margin-left:0;flex:1 1 100%}.dsh-exp-field{flex:1 1 45%;max-width:none}.dsh-exp-filters .dsh-exp-button{margin-left:0;flex:1 1 100%}.dsh-exp-table{min-width:640px}.dsh-exp-table th,.dsh-exp-table td{padding:8px}.dsh-exp-balance-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    `
 
     /** Read one stored preference without letting a browser restriction crash the panel. */
     function readStored(key) {
@@ -646,11 +697,150 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** The remembered table toggles; both start off so the first view shows every Session. */
+    /** The remembered filters: both toggles, the period and every numeric range. */
     function readTableFilters() {
       const parsed = readJson(TABLE_FILTERS_KEY)
-      if (parsed === null || typeof parsed !== 'object') return { onlyToday: false, hideSubagents: false }
-      return { onlyToday: parsed.onlyToday === true, hideSubagents: parsed.hideSubagents === true }
+      const next = { ...DEFAULT_FILTERS }
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return next
+      next.onlyToday = parsed.onlyToday === true
+      next.hideSubagents = parsed.hideSubagents === true
+      if (PERIODS.includes(parsed.period)) next.period = parsed.period
+      for (const key of ['dateFrom', 'dateTo']) {
+        if (typeof parsed[key] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed[key])) next[key] = parsed[key]
+      }
+      for (const key of ['costMin', 'costMax', 'tokensMin', 'tokensMax']) {
+        if (typeof parsed[key] === 'string' || typeof parsed[key] === 'number') next[key] = String(parsed[key])
+      }
+      return next
+    }
+
+    /** Parse one typed range bound: empty means "no bound", a comma decimal point is accepted. */
+    function parseFilterNumber(value) {
+      if (typeof value === 'number') return Number.isFinite(value) ? value : null
+      if (typeof value !== 'string') return null
+      const text = value.trim().replace(/[\s\u00a0]/g, '').replace(',', '.')
+      if (text === '') return null
+      const number = Number(text)
+      return Number.isFinite(number) ? number : null
+    }
+
+    /** Epoch ms of the local start of the day `time` falls in. */
+    function startOfLocalDay(time) {
+      const date = new Date(Number(time) || 0)
+      date.setHours(0, 0, 0, 0)
+      return date.getTime()
+    }
+
+    /** Parse one `YYYY-MM-DD` date input as a local day; `null` when the text is not a date. */
+    function parseDateInput(text) {
+      if (typeof text !== 'string') return null
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text.trim())
+      if (match === null) return null
+      const year = Number(match[1])
+      const month = Number(match[2])
+      const day = Number(match[3])
+      const date = new Date(year, month - 1, day)
+      if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
+      return date.getTime()
+    }
+
+    /**
+     * The inclusive epoch-ms window of the chosen period; `null` means "no period filter".
+     * Custom dates are inclusive: the "до" day counts up to its local midnight.
+     */
+    function periodRange(filters, now) {
+      const period = PERIODS.includes(filters?.period) ? filters.period : 'all'
+      if (period === 'all') return null
+      const today = startOfLocalDay(now)
+      if (period === 'today') return { from: today, to: today + DAY_MS - 1 }
+      if (period === '7d') return { from: today - 6 * DAY_MS, to: today + DAY_MS - 1 }
+      if (period === '30d') return { from: today - 29 * DAY_MS, to: today + DAY_MS - 1 }
+      const rawFrom = parseDateInput(filters?.dateFrom)
+      const rawTo = parseDateInput(filters?.dateTo)
+      if (rawFrom === null && rawTo === null) return null
+      const from = rawFrom === null ? Number.NEGATIVE_INFINITY : rawFrom
+      const to = rawTo === null ? Number.POSITIVE_INFINITY : rawTo + DAY_MS - 1
+      return { from, to }
+    }
+
+    /** Every model name a Session answered with, newest host rows carry up to 12 of them. */
+    function rowModels(row) {
+      if (Array.isArray(row?.models)) return row.models.filter(model => typeof model === 'string' && model !== '')
+      if (typeof row?.model === 'string' && row.model !== '') return [row.model]
+      return []
+    }
+
+    /** Total tokens of one Session: input (cache miss + cache hit) plus output. */
+    function sessionTokens(row) {
+      return (Number(row?.input) || 0) + (Number(row?.cacheHit) || 0) + (Number(row?.output) || 0)
+    }
+
+    /** The case-insensitive haystack the search field matches: Session title plus its models. */
+    function searchText(row) {
+      return [String(row?.title ?? ''), rowModels(row).join(' ')].join(' ').toLowerCase()
+    }
+
+    /**
+     * Apply the session-history filters to rows the client already holds.
+     * `options.costOf` converts one row cost into the display currency, `options.now` pins "today".
+     */
+    function filterSessions(rows, filters, options = {}) {
+      const list = Array.isArray(rows) ? rows : []
+      const active = filters === null || typeof filters !== 'object' ? DEFAULT_FILTERS : filters
+      const now = Number.isFinite(options.now) ? options.now : Date.now()
+      const needle = String(options.query ?? '').trim().toLowerCase()
+      const costOf = typeof options.costOf === 'function' ? options.costOf : row => row?.costUsd
+      const range = periodRange(active, now)
+      const costMin = parseFilterNumber(active.costMin)
+      const costMax = parseFilterNumber(active.costMax)
+      const tokensMin = parseFilterNumber(active.tokensMin)
+      const tokensMax = parseFilterNumber(active.tokensMax)
+      return list.filter(row => {
+        if (row === null || typeof row !== 'object') return false
+        if (active.hideSubagents === true && row.subagent === true) return false
+        if (active.onlyToday === true && !activeToday(row)) return false
+        const created = Number(row.createdAt) || 0
+        if (range !== null && (created < range.from || created > range.to)) return false
+        if (needle !== '' && !searchText(row).includes(needle)) return false
+        if (costMin !== null || costMax !== null) {
+          const raw = costOf(row)
+          const value = raw === null || raw === undefined ? Number.NaN : Number(raw)
+          if (!Number.isFinite(value)) return false
+          if (costMin !== null && value < costMin) return false
+          if (costMax !== null && value > costMax) return false
+        }
+        if (tokensMin !== null || tokensMax !== null) {
+          const tokens = sessionTokens(row)
+          if (tokensMin !== null && tokens < tokensMin) return false
+          if (tokensMax !== null && tokens > tokensMax) return false
+        }
+        return true
+      })
+    }
+
+    /** Clamp a 1-based page number into `1..pageCount`. */
+    function clampPage(page, pageCount) {
+      const count = Math.max(1, Math.floor(Number(pageCount) || 1))
+      const value = Math.floor(Number(page) || 1)
+      return Math.min(Math.max(1, value), count)
+    }
+
+    /** One page of `items` with all the numbers the pager and the counter show. */
+    function paginate(items, page, size) {
+      const list = Array.isArray(items) ? items : []
+      const perPage = Math.max(1, Math.floor(Number(size) || 1))
+      const pageCount = Math.max(1, Math.ceil(list.length / perPage))
+      const current = clampPage(page, pageCount)
+      const start = (current - 1) * perPage
+      const slice = list.slice(start, start + perPage)
+      return {
+        items: slice,
+        page: current,
+        pageCount,
+        total: list.length,
+        from: slice.length === 0 ? 0 : start + 1,
+        to: start + slice.length,
+      }
     }
 
     /** The comparable value of one row for one column; `null` means "no price to compare". */
@@ -704,13 +894,13 @@ window.__ModuleLoader__.load({
         || (Number(row.todayOutput) || 0) > 0
     }
 
+    /** One small labelled figure inside a card. */
     function Metric(props) {
       const title = typeof props.title === 'string' ? props.title : props.label
       return h('div', { className: 'dsh-exp-metric', ...(typeof title === 'string' ? { title } : {}) },
         h('span', { className: 'dsh-exp-metric-label' }, props.label),
         h('span', { className: 'dsh-exp-metric-value' }, props.value))
     }
-
 
     function TotalCard(props) {
       const totals = props.totals
@@ -742,8 +932,13 @@ window.__ModuleLoader__.load({
       const unavailable = row.error === true
       const numbers = (value) => (unavailable ? dash : formatTokens(value))
       const title = row.title || t('untitled')
+      const models = rowModels(row)
+      const modelText = models.length === 0 ? '' : `${t('model')}: ${models.join(', ')}`
       const inputTotal = (Number(row.input) || 0) + (Number(row.cacheHit) || 0)
-      return h('tr', { title: unavailable ? t('unavailable') : title },
+      const rowTitle = unavailable
+        ? t('unavailable')
+        : [title, modelText].filter(part => part !== '').join(' · ')
+      return h('tr', { title: rowTitle },
         h('td', null,
           h('div', { className: 'dsh-exp-session' },
             h('span', { className: 'dsh-exp-session-title' }, title),
@@ -760,27 +955,42 @@ window.__ModuleLoader__.load({
         h('td', { className: 'dsh-exp-num dsh-exp-cost-cell' }, unavailable || cost === null || cost === undefined ? dash : formatMoney(cost, symbol)))
     }
 
-    function WalletCard(props) {
+    /** ◀ ▶ pager with a "Стр. X из Y" label; both histories use this one row. */
+    function Pager(props) {
       const t = props.t
-      return h('section', { className: 'dsh-exp-card', 'data-currency': props.currency },
-        h('div', { className: 'dsh-exp-card-head' },
-          h('span', { className: 'dsh-exp-card-title' }, props.title),
-          h('span', { className: 'dsh-exp-wallet-code' }, props.currency)),
-        h('div', { className: 'dsh-exp-wallet-total' }, formatCurrency(props.total, props.currency)),
-        h('div', { className: 'dsh-exp-wallet-lines' },
-          h('span', { className: 'dsh-exp-wallet-line' },
-            `${t('rechargeable')}: `,
-            h('b', null, formatCurrency(props.rechargeable, props.currency))),
-          h('span', { className: 'dsh-exp-wallet-line' },
-            `${t('bonus')}: `,
-            h('b', null, formatCurrency(props.bonus, props.currency)))))
+      const pageCount = Math.max(1, Math.floor(Number(props.pageCount) || 1))
+      const page = clampPage(props.page, pageCount)
+      const total = Number(props.total) || 0
+      if (total <= 0) return null
+      const go = typeof props.onPage === 'function' ? props.onPage : () => {}
+      const range = typeof props.range === 'string' && props.range !== '' ? ` · ${props.range}` : ''
+      return h('div', { className: 'dsh-exp-pager' },
+        h('span', { className: 'dsh-exp-pager-label' }, `${t('page')} ${page} ${t('of')} ${pageCount}${range}`),
+        h('div', { className: 'dsh-exp-pager-buttons' },
+          h('button', {
+            type: 'button',
+            className: 'dsh-exp-button dsh-exp-button-secondary dsh-exp-button-small',
+            title: t('prevPage'),
+            'aria-label': t('prevPage'),
+            disabled: page <= 1,
+            onClick: () => go(page - 1),
+          }, '◀'),
+          h('button', {
+            type: 'button',
+            className: 'dsh-exp-button dsh-exp-button-secondary dsh-exp-button-small',
+            title: t('nextPage'),
+            'aria-label': t('nextPage'),
+            disabled: page >= pageCount,
+            onClick: () => go(page + 1),
+          }, '▶')))
     }
 
+    /** The observed top-up history: five per page once there is more than one page. */
     function TopUps(props) {
       const t = props.t
-      const [expanded, setExpanded] = React.useState(false)
       const entries = Array.isArray(props.entries) ? props.entries : []
-      const shown = expanded ? entries : entries.slice(0, TOPUPS_SHOWN)
+      const [page, setPage] = React.useState(1)
+      const paged = paginate(entries, page, TOPUP_PAGE_SIZE)
       const totals = new Map()
       for (const entry of entries) {
         const currency = String(entry?.currency ?? '')
@@ -792,28 +1002,21 @@ window.__ModuleLoader__.load({
       return h('section', { className: 'dsh-exp-topups' },
         h('div', { className: 'dsh-exp-topups-head' },
           h('span', { className: 'dsh-exp-card-title' }, t('topUps')),
-          typeof props.topUpUrl === 'string' && props.topUpUrl !== ''
-            ? h('a', { className: 'dsh-exp-link', href: props.topUpUrl, target: '_blank', rel: 'noreferrer noopener' }, `${t('topUpAction')} ↗`)
-            : null),
+          entries.length === 0 ? null : h('span', { className: 'dsh-exp-count', title: `${t('records')}: ${formatTokens(entries.length)}` }, `${formatTokens(entries.length)} ${t('records')}`)),
         entries.length === 0
-          ? h('p', { className: 'dsh-exp-note' }, t('topUpsEmpty'))
-          : h('div', null,
-              h('ul', { className: 'dsh-exp-topup-list' }, shown.map((entry, index) =>
-                h('li', { key: `${entry.at}-${entry.currency}-${index}`, className: 'dsh-exp-topup' },
-                  h('span', { className: 'dsh-exp-topup-time' }, formatDateTime(entry.at)),
-                  h('span', { className: 'dsh-exp-topup-amount' }, `+ ${formatCurrency(entry.amount, entry.currency)}`)))),
-              entries.length > TOPUPS_SHOWN
-                ? h('button', {
-                    type: 'button',
-                    className: 'dsh-exp-link',
-                    style: { background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit' },
-                    onClick: () => setExpanded((value) => !value),
-                  }, expanded ? t('topUpsShowLess') : `${t('topUpsShowAll')} (${entries.length})`)
-                : null,
-              totalText !== ''
-                ? h('p', { className: 'dsh-exp-note' }, `${t('topUpsTotal')}: ${totalText}`)
+          ? h('p', { className: 'dsh-exp-card-note dsh-exp-topups-empty' }, t('topUpsEmpty'))
+          : h('ul', { className: 'dsh-exp-topup-list' }, paged.items.map((entry, index) =>
+              h('li', { key: `${entry.at}-${entry.currency}-${index}`, className: 'dsh-exp-topup' },
+                h('span', { className: 'dsh-exp-topup-time' }, formatDateTime(entry.at)),
+                h('span', { className: 'dsh-exp-topup-amount' }, `+ ${formatCurrency(entry.amount, entry.currency)}`)))),
+        entries.length === 0
+          ? null
+          : h('div', { className: 'dsh-exp-card-footer' },
+              totalText === '' ? null : h('span', { className: 'dsh-exp-card-note' }, `${t('topUpsTotal')}: ${totalText}`),
+              paged.pageCount > 1
+                ? h(Pager, { t, page: paged.page, pageCount: paged.pageCount, total: paged.total, onPage: setPage })
                 : null),
-        h('p', { className: 'dsh-exp-note' }, t('topUpsHint')))
+        h('p', { className: 'dsh-exp-card-note dsh-exp-topups-hint' }, t('topUpsHint')))
     }
 
     function RateLine(props) {
@@ -898,11 +1101,12 @@ window.__ModuleLoader__.load({
               h('span', { className: 'dsh-exp-pricing-price dsh-exp-price-hit' }, `${t('pricingCacheHit')} `, h('b', null, value(model.cacheHit ? model.cacheHit[period] : undefined))),
               h('span', { className: 'dsh-exp-pricing-price dsh-exp-price-miss' }, `${t('pricingCacheMiss')} `, h('b', null, value(model.cacheMiss ? model.cacheMiss[period] : undefined))),
               h('span', { className: 'dsh-exp-pricing-price dsh-exp-price-out' }, `${t('pricingOutput')} `, h('b', null, value(model.output ? model.output[period] : undefined)))))),
-        h('p', { className: 'dsh-exp-note' }, t('pricingNote')),
+        h('p', { className: 'dsh-exp-card-note' }, t('pricingNote')),
         h(RateLine, { rates: props.rates, t }))
     }
 
-    function BalanceSection(props) {
+    /** The balance card: wallets, the four overview metrics and the top-up action share one frame. */
+    function BalanceCard(props) {
       const t = props.t
       const balance = props.balance
       const data = balance.data
@@ -926,38 +1130,82 @@ window.__ModuleLoader__.load({
       } else if (currencies.length === 0) {
         message = t('balanceFailed')
       }
-      const cards = []
-      for (const currency of currencies) {
-        const wallet = wallets.find(item => item.currency === currency)
-        const normal = wallet === undefined ? 0 : Number(wallet.balance)
-        const bonus = bonusByCurrency.has(currency) ? bonusByCurrency.get(currency) : 0
-        cards.push(h(WalletCard, {
-          key: currency,
-          currency,
-          title: currency === 'USD' ? t('balanceUsd') : currency === 'CNY' ? t('balanceCny') : currency,
-          rechargeable: Number.isFinite(normal) ? normal : 0,
-          bonus: Number.isFinite(bonus) ? bonus : 0,
-          total: (Number.isFinite(normal) ? normal : 0) + (Number.isFinite(bonus) ? bonus : 0),
-          t,
-        }))
-      }
-      if (ready && balance.updatedAt > 0) {
-        cards.push(h('div', { key: 'updated', className: 'dsh-exp-wallet-updated' },
-          `${t('balanceUpdatedPrefix')} ${timeFormat.format(new Date(balance.updatedAt))}`))
-      }
-      return h('div', { className: 'dsh-exp-balance' },
-        h('div', { className: 'dsh-exp-wallets' },
-          message === null
-            ? cards
-            : h('section', { className: 'dsh-exp-card' },
-                h('div', { className: 'dsh-exp-card-head' },
-                  h('span', { className: 'dsh-exp-card-title' }, t('balance'))),
-                h('p', { className: 'dsh-exp-wallet-state' }, message))),
-        h(TopUps, {
-          entries: props.topUps,
-          t,
-          topUpUrl: ready && data.links !== null && typeof data.links === 'object' ? data.links.topUpUrl : undefined,
-        }))
+      const topUpUrl = ready && data.links !== null && typeof data.links === 'object'
+        && typeof data.links.topUpUrl === 'string' && data.links.topUpUrl !== ''
+        ? data.links.topUpUrl
+        : ''
+      return h('section', { className: 'dsh-exp-card dsh-exp-balance-card' },
+        h('div', { className: 'dsh-exp-balance-head' },
+          h('span', { className: 'dsh-exp-card-title' }, t('balance')),
+          ready && balance.updatedAt > 0
+            ? h('span', { className: 'dsh-exp-wallet-updated' },
+                `${t('balanceUpdatedPrefix')} ${timeFormat.format(new Date(balance.updatedAt))}`)
+            : null),
+        message === null
+          ? h('div', { className: 'dsh-exp-wallets' }, currencies.map(currency => {
+              const wallet = wallets.find(item => item.currency === currency)
+              const normal = wallet === undefined ? 0 : Number(wallet.balance)
+              const bonus = bonusByCurrency.has(currency) ? bonusByCurrency.get(currency) : 0
+              const rechargeable = Number.isFinite(normal) ? normal : 0
+              const bonusValue = Number.isFinite(bonus) ? bonus : 0
+              return h('div', { key: currency, className: 'dsh-exp-wallet', 'data-currency': currency },
+                h('div', { className: 'dsh-exp-wallet-label' },
+                  h('span', null, currency === 'USD' ? t('balanceUsd') : currency === 'CNY' ? t('balanceCny') : currency),
+                  h('span', { className: 'dsh-exp-wallet-code' }, currency)),
+                h('div', { className: 'dsh-exp-wallet-total' }, formatCurrency(rechargeable + bonusValue, currency)),
+                h('div', { className: 'dsh-exp-wallet-lines' },
+                  h('span', null, `${t('rechargeable')}: `, h('b', null, formatCurrency(rechargeable, currency))),
+                  h('span', null, `${t('bonus')}: `, h('b', null, formatCurrency(bonusValue, currency)))))
+            }))
+          : h('p', { className: 'dsh-exp-wallet-state' }, message),
+        h('div', { className: 'dsh-exp-metrics dsh-exp-balance-metrics' },
+          h(Metric, {
+            label: t('today'),
+            value: props.todayCost === null || props.todayCost === undefined ? '—' : formatMoney(props.todayCost, props.symbol),
+            title: t('today'),
+          }),
+          h(Metric, {
+            label: t('week'),
+            value: props.weekCost === null || props.weekCost === undefined ? '—' : formatMoney(props.weekCost, props.symbol),
+            title: t('weekHint'),
+          }),
+          h(Metric, {
+            label: t('averageSession'),
+            value: props.averageCost === null || props.averageCost === undefined ? '—' : formatMoney(props.averageCost, props.symbol),
+            title: t('averageHint'),
+          }),
+          h(Metric, { label: t('rateLabel'), value: props.rateText })),
+        h('div', { className: 'dsh-exp-card-footer' },
+          topUpUrl !== ''
+            ? h('a', {
+                className: 'dsh-exp-button dsh-exp-button-primary',
+                href: topUpUrl,
+                target: '_blank',
+                rel: 'noreferrer noopener',
+              }, `${t('topUpAction')} ↗`)
+            : h('button', {
+                type: 'button',
+                className: 'dsh-exp-button dsh-exp-button-primary',
+                disabled: true,
+                title: t('topUpUnavailable'),
+                'aria-label': t('topUpUnavailable'),
+              }, t('topUpAction')),
+          h('span', { className: 'dsh-exp-card-note' }, t('balanceFooterHint'))))
+    }
+
+    /** One row: the balance card and the top-up history, equal height, no separate window. */
+    function BalanceSection(props) {
+      return h('div', { className: 'dsh-exp-overview' },
+        h(BalanceCard, {
+          balance: props.balance,
+          todayCost: props.todayCost,
+          weekCost: props.weekCost,
+          averageCost: props.averageCost,
+          rateText: props.rateText,
+          symbol: props.symbol,
+          t: props.t,
+        }),
+        h(TopUps, { entries: props.topUps, t: props.t }))
     }
 
     /** In-panel update row: available version, progress and a restart hint. */
@@ -1000,12 +1248,12 @@ window.__ModuleLoader__.load({
             : h('ul', { className: 'dsh-exp-update-notes' }, notes.map((line, index) => h('li', { key: index }, line)))),
         h('div', { className: 'dsh-exp-update-banner-actions' },
           installed
-            ? h('button', { type: 'button', className: 'dsh-exp-button', onClick: props.onReload }, t('reloadPage'))
+            ? h('button', { type: 'button', className: 'dsh-exp-button dsh-exp-button-primary', onClick: props.onReload }, t('reloadPage'))
             : null,
           available && !installed && !current
             ? h('button', {
                 type: 'button',
-                className: 'dsh-exp-button',
+                className: 'dsh-exp-button dsh-exp-button-primary',
                 disabled: props.busy === true,
                 onClick: props.onInstall,
               }, props.busy === true ? t('installingUpdate') : t('installUpdate'))
@@ -1060,8 +1308,8 @@ window.__ModuleLoader__.load({
           : null,
         h('div', { className: 'dsh-exp-update-toast-actions' },
           installed
-            ? h('button', { type: 'button', className: 'dsh-exp-button', onClick: () => window.location.reload() }, t('reloadPage'))
-            : h('button', { type: 'button', className: 'dsh-exp-button', disabled: busy, onClick: install }, busy ? t('installingUpdate') : t('installUpdate')),
+            ? h('button', { type: 'button', className: 'dsh-exp-button dsh-exp-button-primary', onClick: () => window.location.reload() }, t('reloadPage'))
+            : h('button', { type: 'button', className: 'dsh-exp-button dsh-exp-button-primary', disabled: busy, onClick: install }, busy ? t('installingUpdate') : t('installUpdate')),
           installed
             ? null
             : h('button', { type: 'button', className: 'dsh-exp-button dsh-exp-button-secondary', onClick: dismiss }, t('later'))),
@@ -1082,6 +1330,7 @@ window.__ModuleLoader__.load({
       })
       const [busy, setBusy] = React.useState(false)
       const [query, setQuery] = React.useState('')
+      const [page, setPage] = React.useState(1)
       const [sort, setSort] = React.useState(readTableSort)
       const [filters, setFilters] = React.useState(readTableFilters)
       const [update, refreshUpdate] = useUpdateState(60000)
@@ -1165,19 +1414,16 @@ window.__ModuleLoader__.load({
           }
         : data.totals
       const rows = data === null ? [] : data.sessions
-      const needle = query.trim().toLowerCase()
-      const visibleRows = sortRows(
-        rows.filter(row => {
-          if (filters.hideSubagents === true && row.subagent === true) return false
-          if (filters.onlyToday === true && !activeToday(row)) return false
-          return needle === '' || String(row.title ?? '').toLowerCase().includes(needle)
-        }),
-        sort.key,
-        sort.direction,
-      )
+
+      // The history filters and paging work on the rows the client has already loaded.
+      const filteredRows = filterSessions(rows, filters, { query, costOf: (row) => toDisplay(row.costUsd) })
+      const sortedRows = sortRows(filteredRows, sort.key, sort.direction)
+      const sessionPage = paginate(sortedRows, page, SESSION_PAGE_SIZE)
+      const pageRows = sessionPage.items
+
       let shownCostUsd = 0
-      let shownCostKnown = visibleRows.length > 0
-      for (const row of visibleRows) {
+      let shownCostKnown = filteredRows.length > 0
+      for (const row of filteredRows) {
         if (row.costUsd === null || row.costUsd === undefined) {
           shownCostKnown = false
           break
@@ -1185,6 +1431,27 @@ window.__ModuleLoader__.load({
         shownCostUsd += Number(row.costUsd) || 0
       }
       const shownCost = shownCostKnown ? toDisplay(shownCostUsd) : null
+
+      // Extra balance-card metrics: today's spend, the last seven days by Session date and the average.
+      const weekStart = startOfLocalDay(Date.now()) - 6 * DAY_MS
+      let weekCostUsd = 0
+      let pricedSessions = 0
+      for (const row of rows) {
+        if (row.costUsd !== null && row.costUsd !== undefined) {
+          pricedSessions += 1
+          if ((Number(row.createdAt) || 0) >= weekStart) weekCostUsd += Number(row.costUsd) || 0
+        }
+      }
+      const todayCost = toDisplay(totals.today.costUsd)
+      const pricingKnown = totals.all.costUsd !== null && totals.all.costUsd !== undefined
+      const weekCost = rows.length === 0 || !pricingKnown ? null : toDisplay(weekCostUsd)
+      const averageCostUsd = pricedSessions > 0 && pricingKnown
+        ? Number(totals.all.costUsd) / pricedSessions
+        : null
+      const averageCost = averageCostUsd === null ? null : toDisplay(averageCostUsd)
+      const rateText = rateData !== null && Number.isFinite(Number(rateData.rubPerUsd))
+        ? `1 $ = ${rateFormat.format(Number(rateData.rubPerUsd))} ₽`
+        : t('rateFailed')
 
       /** Remember the new sort; the first click on a column picks its natural direction. */
       const toggleSort = (key) => {
@@ -1196,20 +1463,41 @@ window.__ModuleLoader__.load({
         writeJson(TABLE_SORT_KEY, next)
       }
 
-      /** Flip one table toggle and persist both, so the view survives a reload. */
+      /** Flip one filter and persist the whole set; any change returns to the first page. */
       const setFilter = (key, value) => {
         const next = { ...filters, [key]: value }
         setFilters(next)
         writeJson(TABLE_FILTERS_KEY, next)
+        setPage(1)
       }
 
-      /** Drop the query and both toggles; the column sort stays as the user set it. */
+      /** The search field shares the filter state: it also rewinds to the first page. */
+      const setSearch = (value) => {
+        setQuery(value)
+        setPage(1)
+      }
+
+      /** Drop every filter and the query; the column sort stays as the user set it. */
       const resetFilters = () => {
-        const next = { onlyToday: false, hideSubagents: false }
+        const next = { ...DEFAULT_FILTERS }
         setQuery('')
         setFilters(next)
         writeJson(TABLE_FILTERS_KEY, next)
+        setPage(1)
       }
+
+      const periodOptions = [
+        ['all', t('periodAll')],
+        ['today', t('periodToday')],
+        ['7d', t('period7')],
+        ['30d', t('period30')],
+        ['custom', t('periodCustom')],
+      ]
+
+      /** One labelled range field; the numeric and date variants share the styling. */
+      const filterField = (key, label, props) => h('label', { className: 'dsh-exp-field' },
+        h('span', { className: 'dsh-exp-field-label' }, label),
+        h('input', { className: 'dsh-exp-input', value: filters[key], 'aria-label': label, onChange: event => setFilter(key, event.target.value), ...props }))
 
       /** Ask the host for a fresh GitHub check and show the outcome next to the button. */
       const checkUpdates = async () => {
@@ -1266,7 +1554,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'dsh-exp-heading' },
               h('div', { className: 'dsh-exp-heading-main' },
                 h('span', { className: 'dsh-exp-logo', 'aria-hidden': true }, '💰'),
-                h('div', null,
+                h('div', { className: 'dsh-exp-heading-text' },
                   h('h1', null, t('title')),
                   h('p', { className: 'dsh-exp-sub' }, t('subtitle')))),
               h('div', { className: 'dsh-exp-actions' },
@@ -1313,7 +1601,16 @@ window.__ModuleLoader__.load({
               onInstall: installUpdate,
               onReload: () => window.location.reload(),
             }),
-            h(BalanceSection, { balance, topUps, t }),
+            h(BalanceSection, {
+              balance,
+              topUps,
+              todayCost,
+              weekCost,
+              averageCost,
+              rateText,
+              symbol: displaySymbol,
+              t,
+            }),
             h('div', { className: 'dsh-exp-cards' },
               h(TotalCard, { title: t('today'), totals: totals.today, cost: toDisplay(totals.today.costUsd), symbol: displaySymbol, t }),
               h(TotalCard, { title: t('allTime'), totals: totals.all, cost: toDisplay(totals.all.costUsd), symbol: displaySymbol, t })),
@@ -1344,7 +1641,7 @@ window.__ModuleLoader__.load({
                         value: query,
                         placeholder: t('search'),
                         'aria-label': t('search'),
-                        onChange: event => setQuery(event.target.value),
+                        onChange: event => setSearch(event.target.value),
                       }),
                       query === ''
                         ? null
@@ -1353,7 +1650,7 @@ window.__ModuleLoader__.load({
                             className: 'dsh-exp-search-clear',
                             title: t('searchClear'),
                             'aria-label': t('searchClear'),
-                            onClick: () => setQuery(''),
+                            onClick: () => setSearch(''),
                           }, '×')),
                     h('label', { className: 'dsh-exp-toggle' },
                       h('input', {
@@ -1371,9 +1668,31 @@ window.__ModuleLoader__.load({
                       t('hideSubagents')),
                     h('span', { className: 'dsh-exp-count' },
                       `${t('shown')} `,
-                      h('b', null, formatTokens(visibleRows.length)),
+                      h('b', null, formatTokens(filteredRows.length)),
                       ` ${t('of')} ${formatTokens(rows.length)}`,
                       shownCost === null ? null : ` · ${t('shownCost')}: ${formatMoney(shownCost, displaySymbol)}`))
+                : null,
+              rows.length > 0
+                ? h('div', { className: 'dsh-exp-filters' },
+                    h('label', { className: 'dsh-exp-field' },
+                      h('span', { className: 'dsh-exp-field-label' }, t('period')),
+                      h('select', {
+                        className: 'dsh-exp-select',
+                        value: filters.period,
+                        'aria-label': t('period'),
+                        onChange: event => setFilter('period', event.target.value),
+                      }, periodOptions.map(([value, label]) => h('option', { key: value, value }, label)))),
+                    filters.period === 'custom' ? filterField('dateFrom', t('dateFrom'), { type: 'date' }) : null,
+                    filters.period === 'custom' ? filterField('dateTo', t('dateTo'), { type: 'date' }) : null,
+                    filterField('costMin', t('costFrom'), { type: 'number', min: '0', step: 'any', inputMode: 'decimal', placeholder: '0' }),
+                    filterField('costMax', t('costTo'), { type: 'number', min: '0', step: 'any', inputMode: 'decimal', placeholder: '0' }),
+                    filterField('tokensMin', t('tokensFrom'), { type: 'number', min: '0', step: '1', inputMode: 'numeric', placeholder: '0' }),
+                    filterField('tokensMax', t('tokensTo'), { type: 'number', min: '0', step: '1', inputMode: 'numeric', placeholder: '0' }),
+                    h('button', {
+                      type: 'button',
+                      className: 'dsh-exp-button dsh-exp-button-secondary dsh-exp-button-small',
+                      onClick: resetFilters,
+                    }, t('resetFilters')))
                 : null,
               snapshot.error !== null && snapshot.data !== null
                 ? h('div', { className: 'dsh-exp-warning' }, `${t('loadFailed')} ${snapshot.error}`)
@@ -1384,17 +1703,22 @@ window.__ModuleLoader__.load({
               snapshot.status === 'error'
                 ? h('div', { className: 'dsh-exp-alert' },
                     h('span', null, `${t('loadFailed')} ${snapshot.error}`),
-                    h('button', { type: 'button', className: 'dsh-exp-button', disabled: busy, onClick: () => load(true) }, t('retry')))
+                    h('button', {
+                      type: 'button',
+                      className: 'dsh-exp-button dsh-exp-button-primary',
+                      disabled: busy,
+                      onClick: () => load(true),
+                    }, t('retry')))
                 : null,
               snapshot.status === 'ready' && rows.length === 0
                 ? h('div', { className: 'dsh-exp-state' }, t('noSessions'))
                 : null,
-              rows.length > 0 && visibleRows.length === 0
+              rows.length > 0 && filteredRows.length === 0
                 ? h('div', { className: 'dsh-exp-no-matches' },
                     h('div', null, t('noMatches')),
-                    h('button', { type: 'button', className: 'dsh-exp-button', onClick: resetFilters }, t('resetFilters')))
+                    h('button', { type: 'button', className: 'dsh-exp-button dsh-exp-button-secondary', onClick: resetFilters }, t('resetFilters')))
                 : null,
-              visibleRows.length > 0
+              filteredRows.length > 0
                 ? h('div', { className: 'dsh-exp-table-scroll' },
                     h('table', { className: 'dsh-exp-table' },
                       h('colgroup', null,
@@ -1414,13 +1738,24 @@ window.__ModuleLoader__.load({
                           column('requests', t('requests'), true),
                           column('toolCalls', t('toolCalls'), true),
                           column('cost', t('cost'), true))),
-                      h('tbody', null, visibleRows.map(row => h(SessionRow, {
+                      h('tbody', null, pageRows.map(row => h(SessionRow, {
                         key: row.id,
                         row,
                         cost: toDisplay(row.costUsd),
                         symbol: displaySymbol,
                         t,
                       })))))
+                : null,
+              filteredRows.length > 0
+                ? h('div', { className: 'dsh-exp-table-footer' },
+                    h(Pager, {
+                      t,
+                      page: sessionPage.page,
+                      pageCount: sessionPage.pageCount,
+                      total: sessionPage.total,
+                      range: `${sessionPage.from}–${sessionPage.to} ${t('of')} ${sessionPage.total}`,
+                      onPage: setPage,
+                    }))
                 : null))))
     }
 
@@ -1464,6 +1799,37 @@ window.__ModuleLoader__.load({
 
     return {
       inject: ['slots', 'locale'],
+      /** Pure helpers and components exposed for the render/pagination/filter tests. */
+      __test: {
+        DICT,
+        CSS,
+        SESSION_PAGE_SIZE,
+        TOPUP_PAGE_SIZE,
+        DEFAULT_FILTERS,
+        paginate,
+        clampPage,
+        filterSessions,
+        sortRows,
+        sessionTokens,
+        periodRange,
+        parseFilterNumber,
+        parseDateInput,
+        startOfLocalDay,
+        rowModels,
+        searchText,
+        formatCurrency,
+        components: {
+          Metric,
+          TotalCard,
+          SessionRow,
+          Pager,
+          TopUps,
+          BalanceCard,
+          BalanceSection,
+          PricingBlock,
+          ExpensesPage,
+        },
+      },
       apply(ctx) {
         bound = ctx.locale.bind(NS)
         ctx.effect(() => ctx.locale.register(NS, 'ru', DICT), 'expenses: ru dictionary')

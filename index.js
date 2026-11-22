@@ -326,6 +326,8 @@ export function summarizeEvents(events, inheritedEventCount, todayStart, models 
     todayCostUsd: 0,
     updatedAt: 0,
     firstUserText: '',
+    /** Model names the Session answered with, in answer order, capped for the overview payload. */
+    models: [],
   }
   const inherited = Number(inheritedEventCount) || 0
   if (!Array.isArray(events)) return summary
@@ -353,11 +355,15 @@ export function summarizeEvents(events, inheritedEventCount, todayStart, models 
             summary.todayCacheHit += cacheHit
             summary.todayOutput += output
           }
+          const message = event.data.message
+          const model = message !== null && typeof message === 'object' && message.source !== null && typeof message.source === 'object'
+            ? message.source.model
+            : undefined
+          const modelName = typeof model === 'string' ? model.trim() : ''
+          if (modelName !== '' && summary.models.length < 12 && !summary.models.includes(modelName)) {
+            summary.models.push(modelName)
+          }
           if (models !== null) {
-            const message = event.data.message
-            const model = message !== null && typeof message === 'object' && message.source !== null && typeof message.source === 'object'
-              ? message.source.model
-              : undefined
             const cost = costUsdForUsage(usage, models, model, time)
             if (cost === null) {
               summary.unpricedEvents += 1
@@ -396,6 +402,7 @@ function emptyRow(header, title) {
     title,
     createdAt: Number(header.createdAt) || 0,
     updatedAt: 0,
+    models: [],
     input: 0,
     cacheHit: 0,
     output: 0,
@@ -515,6 +522,7 @@ export async function readOverview(ctx, options = {}) {
         title: title || summary.firstUserText,
         createdAt: Number(header.createdAt) || 0,
         updatedAt: summary.updatedAt,
+        models: summary.models,
         input: summary.input,
         cacheHit: summary.cacheHit,
         output: summary.output,
