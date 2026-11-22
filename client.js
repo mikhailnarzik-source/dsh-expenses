@@ -68,6 +68,9 @@ window.__ModuleLoader__.load({
       date: 'Дата',
       noSessions: 'Сессий пока нет.',
       loading: 'Загрузка…',
+      statusReady: 'Данные актуальны',
+      statusLoading: 'Обновляю данные',
+      statusError: 'Ошибка загрузки',
       loadFailed: 'Не удалось загрузить данные.',
       retry: 'Повторить',
       subagent: 'субагент', archived: 'удалена', archivedHint: 'Удалённые сессии остаются в истории: их стоимость входит в итоги.',
@@ -146,7 +149,7 @@ window.__ModuleLoader__.load({
 .dsh-exp-content{max-width:1000px;margin:0 auto;padding:0 clamp(24px,4vw,48px) 56px}
 .dsh-exp-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding-top:28px;margin-bottom:22px}
 .dsh-exp-heading-main{display:flex;align-items:center;gap:14px;min-width:0}
-.dsh-exp-logo{display:flex;flex:none;align-items:center;justify-content:center;width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--dsw-alias-brand-primary),color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,#8b5cf6));color:var(--dsw-alias-label-primary-inverted);box-shadow:0 4px 12px color-mix(in srgb,var(--dsw-alias-brand-primary) 26%,transparent)}
+.dsh-exp-logo{display:flex;flex:none;align-items:center;justify-content:center;width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--dsw-alias-brand-primary),color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,var(--dsw-alias-state-business-primary)));color:var(--dsw-alias-label-primary-inverted);box-shadow:0 4px 12px color-mix(in srgb,var(--dsw-alias-brand-primary) 26%,transparent)}
 .dsh-exp-heading h1{margin:0;font-size:22px;font-weight:600;line-height:30px;letter-spacing:-.01em}
 .dsh-exp-sub{margin:2px 0 0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
 .dsh-exp-actions{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:12px}
@@ -274,6 +277,35 @@ window.__ModuleLoader__.load({
 .dsh-exp-update-current{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
 @media (max-width:900px){.dsh-exp-balance{grid-template-columns:minmax(0,1fr)}.dsh-exp-table th,.dsh-exp-table td{padding-right:8px;padding-left:8px}}
 @media (max-width:760px){.dsh-exp-cards{grid-template-columns:1fr}.dsh-exp-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* Единый стиль страниц плагинов DSH: центр 960, шапка с иконкой, карточки-секции. */
+.dsh-exp-content{max-width:960px;padding:24px 28px 40px}
+.dsh-exp-heading{padding-top:0;margin-bottom:16px;align-items:flex-start;gap:14px}
+.dsh-exp-heading h1{font-size:20px;font-weight:600;line-height:26px}
+.dsh-exp-sub{margin-top:2px;font-size:12.5px;line-height:18px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dsh-exp-logo{width:52px;height:52px;border-radius:14px;font-size:26px;line-height:1;box-shadow:0 6px 16px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
+.dsh-exp-actions{gap:8px}
+.dsh-exp-button{height:36px;padding:0 14px;border:1px solid transparent;border-radius:10px;background:var(--dsw-alias-brand-primary);color:#fff;font:inherit;font-size:12.5px;font-weight:600;line-height:20px;white-space:nowrap;cursor:pointer;box-shadow:none;transition:background-color .12s ease,border-color .12s ease,color .12s ease}
+.dsh-exp-button:hover:not(:disabled){background:var(--dsw-alias-brand-primary);filter:brightness(1.06)}
+.dsh-exp-button:disabled{opacity:.55;background:var(--dsw-alias-brand-primary);color:#fff;box-shadow:none;cursor:default}
+.dsh-exp-button-secondary{border:1px solid var(--dsw-alias-border-l4);background:transparent;color:var(--dsw-alias-label-primary);box-shadow:none}
+.dsh-exp-button-secondary:hover:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent);filter:none}
+.dsh-exp-button-secondary:disabled{background:transparent;color:var(--dsw-alias-label-tertiary);border-color:var(--dsw-alias-border-l2)}
+.dsh-exp-actions .dsh-exp-button{height:32px;padding:0 12px}
+.dsh-exp-card,.dsh-exp-pricing,.dsh-exp-topups{border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-alias-bg-layer-1)}
+.dsh-exp-card{padding:16px}
+.dsh-exp-pricing,.dsh-exp-topups{padding:16px}
+.dsh-exp-card-head{align-items:center}
+.dsh-exp-card-title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600;line-height:20px}
+.dsh-exp-search input{height:34px;border-radius:9px;background:var(--dsw-alias-bg-layer-2);font-size:12.5px}
+.dsh-exp-select{height:34px;border-radius:9px;background:var(--dsw-alias-bg-layer-2);font-size:12.5px}
+.dsh-exp-table-wrap{border:1px solid var(--dsw-alias-border-l2);border-radius:14px}
+.dsh-exp-update-banner{border-radius:14px}
+.dsh-exp-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px;white-space:nowrap}
+.dsh-exp-chip::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;background:currentColor}
+.dsh-exp-chip.is-ok{border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 55%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent);color:var(--dsw-alias-state-success-primary)}
+.dsh-exp-chip.is-warn{border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 55%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 14%,transparent);color:var(--dsw-alias-state-warn-primary)}
+.dsh-exp-chip.is-bad{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 55%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);color:var(--dsw-alias-state-error-primary)}
+@media (max-width:760px){.dsh-exp-content{padding:18px 16px 32px}.dsh-exp-heading{gap:10px}.dsh-exp-card,.dsh-exp-pricing,.dsh-exp-topups{padding:14px}}
 `
 
     /** Read one stored preference without letting a browser restriction crash the panel. */
@@ -1233,11 +1265,23 @@ window.__ModuleLoader__.load({
           h('div', { className: 'dsh-exp-content' },
             h('div', { className: 'dsh-exp-heading' },
               h('div', { className: 'dsh-exp-heading-main' },
-                h('span', { className: 'dsh-exp-logo' }, h(ExpensesIcon, { size: 20 })),
+                h('span', { className: 'dsh-exp-logo', 'aria-hidden': true }, '💰'),
                 h('div', null,
                   h('h1', null, t('title')),
                   h('p', { className: 'dsh-exp-sub' }, t('subtitle')))),
               h('div', { className: 'dsh-exp-actions' },
+                h('span', {
+                  className: snapshot.status === 'ready'
+                    ? 'dsh-exp-chip is-ok'
+                    : snapshot.status === 'error'
+                      ? 'dsh-exp-chip is-bad'
+                      : 'dsh-exp-chip is-warn',
+                  role: 'status',
+                }, snapshot.status === 'ready'
+                  ? t('statusReady')
+                  : snapshot.status === 'error'
+                    ? t('statusError')
+                    : t('statusLoading')),
                 update.data !== null && update.data !== undefined && typeof update.data.installedVersion === 'string' && update.data.installedVersion !== ''
                   ? h('span', { className: 'dsh-exp-version' }, `${t('version')} ${update.data.installedVersion}`)
                   : null,
@@ -1252,7 +1296,7 @@ window.__ModuleLoader__.load({
                 }, updateBusy ? t('checkingUpdates') : t('checkUpdates')),
                 h('button', {
                   type: 'button',
-                  className: 'dsh-exp-button',
+                  className: 'dsh-exp-button dsh-exp-button-secondary',
                   disabled: busy,
                   onClick: () => {
                     void load(true)
