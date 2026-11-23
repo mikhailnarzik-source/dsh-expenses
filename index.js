@@ -829,6 +829,159 @@ async function writeRatesCache(value) {
 }
 
 
+/* Пополнения: файл вместо localStorage. */
+
+/** Absolute route that serves the merged top-up history. */
+export const TOPUPS_PATH = '/api/expenses.topups'
+
+/** Absolute route that merges new top-up records into the history file. */
+export const TOPUPS_MERGE_PATH = '/api/expenses.topups.merge'
+
+/** Сколько записей пополнений хранить в файле. */
+export const TOPUPS_LIMIT = 60
+
+/** Файл истории пополнений: переживает очистку данных браузера. */
+function topupsFile() {
+  const home = process.env.DSH_HOME
+  const base = typeof home === 'string' && home !== '' ? home : join(homedir(), '.dsh')
+  return join(base, 'dsh-expenses', 'topups.json')
+}
+
+/**
+ * Детерминированный id записи пополнения: маршрут merge дедуплицирует по нему,
+ * поэтому одно и то же наблюдение, отправленное дважды (гонка опросов, второй
+ * браузер), не задваивается.
+ */
+export function topUpId(at, currency, amount) {
+  return `topup:${Number(at)}:${currency}:${amount}`
+}
+
+/** Курсы на момент записи: только полный и положительный набор сохраняется. */
+function normalizeTopUpRates(rates) {
+  if (rates === null || typeof rates !== 'object') return null
+  const rubPerUsd = Number(rates.rubPerUsd)
+  const rubPerCny = Number(rates.rubPerCny)
+  const cnyPerUsd = Number(rates.cnyPerUsd)
+  if (!Number.isFinite(rubPerUsd) || rubPerUsd <= 0
+    || !Number.isFinite(rubPerCny) || rubPerCny <= 0
+    || !Number.isFinite(cnyPerUsd) || cnyPerUsd <= 0) return null
+  const updatedAt = Number(rates.updatedAt)
+  return {
+    rubPerUsd,
+    rubPerCny,
+    cnyPerUsd,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0,
+  }
+}
+
+/**
+ * Проверить одну запись пополнения и дать ей merge-id.
+ * @returns нормализованная запись, или `null`, когда запись непригодна.
+ */
+export function normalizeTopUp(entry) {
+  if (entry === null || typeof entry !== 'object') return null
+  const at = Number(entry.at)
+  const currency = typeof entry.currency === 'string' ? entry.currency : ''
+  const amount = Number(entry.amount)
+  if (!Number.isFinite(at) || at <= 0) return null
+  if (!/^[A-Za-z]{2,8}$/u.test(currency)) return null
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  const rates = normalizeTopUpRates(entry.rates)
+  return {
+    id: topUpId(at, currency, amount),
+    at,
+    currency,
+    amount,
+    ...(rates === null ? {} : { rates }),
+  }
+}
+
+/**
+ * Слить новые записи пополнений с историей по id.
+ * @param existing - хранящиеся записи, любой порядок.
+ * @param incoming - записи на слияние, любой порядок.
+ * @param limit - сколько записей оставить (новейшие).
+ * @returns записи (новые сверху) и счётчики исхода: добавлено / обновлено /
+ * пропущено; у пропущенных есть причина (invalid — непригодная запись,
+ * unchanged — точный повтор).
+ */
+export function mergeTopUps(existing, incoming, limit = TOPUPS_LIMIT) {
+  const map = new Map()
+  for (const raw of Array.isArray(existing) ? existing : []) {
+    const record = normalizeTopUp(raw)
+    if (record === null || map.has(record.id)) continue
+    map.set(record.id, record)
+  }
+  const reasons = []
+  let added = 0
+  let updated = 0
+  let skipped = 0
+  for (const raw of Array.isArray(incoming) ? incoming : []) {
+    const next = normalizeTopUp(raw)
+    if (next === null) {
+      skipped += 1
+      reasons.push({
+        id: raw !== null && typeof raw === 'object' && typeof raw.id === 'string' ? raw.id : '',
+        reason: 'invalid',
+      })
+      continue
+    }
+    const previous = map.get(next.id)
+    if (previous === undefined) {
+      map.set(next.id, next)
+      added += 1
+      continue
+    }
+    // Входящий курс заменяет сохранённый; запись без курса сохранённый не стирает.
+    const merged = next.rates === undefined ? { ...previous } : { ...previous, rates: next.rates }
+    if (JSON.stringify(merged) === JSON.stringify(previous)) {
+      skipped += 1
+      reasons.push({ id: next.id, reason: 'unchanged' })
+    } else {
+      map.set(next.id, merged)
+      updated += 1
+    }
+  }
+  const entries = [...map.values()].sort((left, right) => right.at - left.at)
+  return {
+    entries: entries.length > limit ? entries.slice(0, limit) : entries,
+    added,
+    updated,
+    skipped,
+    reasons,
+  }
+}
+
+/** Прочитать историю пополнений из файла; отсутствующий файл — пустая история. */
+export async function loadTopUps() {
+  try {
+    const parsed = JSON.parse(await readFile(topupsFile(), 'utf8'))
+    const records = Array.isArray(parsed) ? parsed : []
+    return records
+      .map(normalizeTopUp)
+      .filter(record => record !== null)
+      .sort((left, right) => right.at - left.at)
+      .slice(0, TOPUPS_LIMIT)
+  } catch {
+    return []
+  }
+}
+
+/** Сохранить историю пополнений в файл; сбой записи не должен ломать панель. */
+export async function saveTopUps(entries) {
+  try {
+    const records = (Array.isArray(entries) ? entries : [])
+      .map(normalizeTopUp)
+      .filter(record => record !== null)
+      .sort((left, right) => right.at - left.at)
+      .slice(0, TOPUPS_LIMIT)
+    await mkdir(dirname(topupsFile()), { recursive: true })
+    await writeFile(topupsFile(), JSON.stringify(records, null, 2) + '\n', 'utf8')
+  } catch {
+    // Файл пополнений — удобство; его сбой не должен ломать панель.
+  }
+}
+
 /** Записать событие в общий журнал плагина. */
 async function appendLog(kind, ok, message) {
   try {
@@ -974,6 +1127,50 @@ export function apply(ctx) {
       }
     },
   }), 'expenses: rates route')
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: TOPUPS_PATH,
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: async () => {
+      try {
+        const entries = await loadTopUps()
+        return jsonResponse({ entries, total: entries.length })
+      } catch (error) {
+        return jsonResponse({ error: error instanceof Error ? error.message : String(error) }, 500)
+      }
+    },
+  }), 'expenses: topups list route')
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: TOPUPS_MERGE_PATH,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: async (request) => {
+      let payload = {}
+      try {
+        payload = (await request.json()) ?? {}
+      } catch {
+        payload = {}
+      }
+      const incoming = Array.isArray(payload.entries) ? payload.entries : []
+      try {
+        const result = mergeTopUps(await loadTopUps(), incoming)
+        if (result.added > 0 || result.updated > 0) await saveTopUps(result.entries)
+        if (result.added + result.updated + result.skipped > 0) {
+          void appendLog('topups', true, `merge: добавлено ${result.added}, обновлено ${result.updated}, пропущено ${result.skipped}`)
+        }
+        return jsonResponse({
+          ok: true,
+          added: result.added,
+          updated: result.updated,
+          skipped: result.skipped,
+          reasons: result.reasons,
+          total: result.entries.length,
+        })
+      } catch (error) {
+        return jsonResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500)
+      }
+    },
+  }), 'expenses: topups merge route')
   ctx.effect(() => ctx.connection.fetch.register({
     path: UPDATE_STATUS_PATH,
     methods: ['GET'],

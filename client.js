@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
     /** A dismissed offer is remembered per available version. */
     const UPDATE_DISMISS_KEY = 'dsh-expenses:update-dismissed'
     /** Build identity reported to the platform on balance requests. */
-    const CLIENT_VERSION = '0.4.12'
+    const CLIENT_VERSION = '0.4.13'
     const CURRENCY_KEY = 'dsh-expenses:currency'
     const CURRENCIES = ['₽', '$', '¥']
     /** Currency symbol ↔ ISO code, the vocabulary the rate line and the price conversion use. */
@@ -38,7 +38,10 @@ window.__ModuleLoader__.load({
     const PRICING_SOURCE = 'https://api-docs.deepseek.com/quick_start/pricing/'
     /** Last observed recharge wallets, used to notice top-ups between polls. */
     const WALLETS_KEY = 'dsh-expenses:balance-wallets'
-    /** Top-ups observed by this panel, newest first. */
+    /** Host routes for the file-backed top-up history: merge new records, list them. */
+    const TOPUPS_ROUTE = '/api/expenses.topups'
+    const TOPUPS_MERGE_ROUTE = '/api/expenses.topups.merge'
+    /** Legacy localStorage key: migrated into the file once, then cleared. */
     const TOPUPS_KEY = 'dsh-expenses:topups'
     const TOPUPS_LIMIT = 60
     const TOPUPS_SHOWN = 5
@@ -529,18 +532,42 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** The top-up log, newest first. */
-    function readTopUps() {
+    /** Deterministic merge id of one top-up record — the same formula the Host uses. */
+    function topUpId(at, currency, amount) {
+      return `topup:${Number(at)}:${currency}:${amount}`
+    }
+
+    /** Validate one top-up record for the merge route; unusable records are dropped. */
+    function normalizeTopUp(entry) {
+      if (entry === null || typeof entry !== 'object') return null
+      const at = Number(entry.at)
+      const currency = typeof entry.currency === 'string' ? entry.currency : ''
+      const amount = Number(entry.amount)
+      if (!Number.isFinite(at) || at <= 0) return null
+      if (!/^[A-Za-z]{2,8}$/u.test(currency)) return null
+      if (!Number.isFinite(amount) || amount <= 0) return null
+      return { id: topUpId(at, currency, amount), at, currency, amount }
+    }
+
+    /** Legacy top-up list from localStorage — only the first-run migration reads it. */
+    function readLegacyTopUps() {
       const parsed = readJson(TOPUPS_KEY)
       if (!Array.isArray(parsed)) return []
       return parsed
         .filter(entry => entry !== null
           && typeof entry === 'object'
           && Number.isFinite(Number(entry.at))
+          && Number(entry.at) > 0
           && typeof entry.currency === 'string'
+          && entry.currency !== ''
           && Number.isFinite(Number(entry.amount))
           && Number(entry.amount) > 0)
-        .map(entry => ({ at: Number(entry.at), currency: entry.currency, amount: Number(entry.amount) }))
+        .map(entry => ({
+          id: topUpId(Number(entry.at), entry.currency, Number(entry.amount)),
+          at: Number(entry.at),
+          currency: entry.currency,
+          amount: Number(entry.amount),
+        }))
         .slice(0, TOPUPS_LIMIT)
     }
 
@@ -580,7 +607,7 @@ window.__ModuleLoader__.load({
           if (value > before + 0.000001) detected.push({ at: Date.now(), currency, amount: value - before })
         }
       }
-      if (detected.length > 0) writeJson(TOPUPS_KEY, [...detected, ...readTopUps()].slice(0, TOPUPS_LIMIT))
+      if (detected.length > 0) void submitDetectedTopUps(detected)
       const snapshot = {}
       for (const [currency, value] of next) snapshot[currency] = value
       writeJson(WALLETS_KEY, snapshot)
@@ -639,6 +666,88 @@ window.__ModuleLoader__.load({
       balanceTimer = undefined
     }
 
+    /** Последний успешный набор курсов: прикладывается к записи пополнения. */
+    let lastRates = null
+
+    /** Миниатюра курсов для записи: «курс на момент записи», не «сегодняшний». */
+    function ratesSnapshot(rates) {
+      if (rates === null || typeof rates !== 'object') return null
+      const rubPerUsd = Number(rates.rubPerUsd)
+      const rubPerCny = Number(rates.rubPerCny)
+      const cnyPerUsd = Number(rates.cnyPerUsd)
+      if (!Number.isFinite(rubPerUsd) || rubPerUsd <= 0
+        || !Number.isFinite(rubPerCny) || rubPerCny <= 0
+        || !Number.isFinite(cnyPerUsd) || cnyPerUsd <= 0) return null
+      const updatedAt = Number(rates.updatedAt)
+      return {
+        rubPerUsd,
+        rubPerCny,
+        cnyPerUsd,
+        updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0,
+      }
+    }
+
+    /** POST one batch of top-up records to the Host merge route. */
+    function postTopUps(entries) {
+      return fetch(TOPUPS_MERGE_ROUTE, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ entries }),
+      }).then(async (response) => {
+        const data = await response.json().catch(() => null)
+        if (!response.ok) {
+          throw new Error(data !== null && typeof data === 'object' && typeof data.error === 'string' ? data.error : `HTTP ${response.status}`)
+        }
+        return data
+      })
+    }
+
+    /**
+     * Отправить зафиксированные пополнения в файл на Host. Курсы прикладываются,
+     * только если они уже известны — это курс на момент записи.
+     */
+    function submitDetectedTopUps(rawEntries) {
+      const entries = (Array.isArray(rawEntries) ? rawEntries : [])
+        .map(normalizeTopUp)
+        .filter(entry => entry !== null)
+      if (entries.length === 0) return Promise.resolve(null)
+      const snapshot = ratesSnapshot(lastRates)
+      const payload = snapshot === null ? entries : entries.map(entry => ({ ...entry, rates: snapshot }))
+      return postTopUps(payload).catch(() => null)
+    }
+
+    /** Прочитать историю пополнений из файла на Host. */
+    async function fetchTopUps() {
+      const response = await fetch(TOPUPS_ROUTE, { credentials: 'same-origin', cache: 'no-store' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data = await response.json()
+      if (data === null || typeof data !== 'object' || !Array.isArray(data.entries)) throw new Error('unexpected response')
+      return data.entries
+    }
+
+    /**
+     * Первый запуск после обновления: пополнения из старого localStorage-ключа
+     * отправляются в файл на Host, затем ключ очищается. Один раз за загрузку;
+     * если отправка не удалась, ключ остаётся и миграция повторится.
+     */
+    let migrationStarted = false
+    async function migrateLegacyTopUps() {
+      if (migrationStarted) return
+      migrationStarted = true
+      const entries = readLegacyTopUps()
+      if (entries.length === 0) return
+      const result = await postTopUps(entries).catch(() => null)
+      if (result !== null && result !== undefined && result.ok === true) {
+        try {
+          window.localStorage.removeItem(TOPUPS_KEY)
+        } catch {
+          // Очистка необязательна: при следующем запуске миграция повторится.
+        }
+      }
+    }
+
     let ratesInFlight
 
     /** Read the approximate rates once; concurrent callers share the request. */
@@ -653,6 +762,7 @@ window.__ModuleLoader__.load({
           if (!response.ok) throw new Error(`HTTP ${response.status}`)
           const data = await response.json()
           if (data === null || typeof data !== 'object' || typeof data.status !== 'string') throw new Error('unexpected response')
+          if (data.status === 'ready') lastRates = data
           return {
             status: data.status,
             data: data.status === 'ready' ? data : null,
@@ -1323,7 +1433,7 @@ window.__ModuleLoader__.load({
       const [snapshot, setSnapshot] = React.useState({ data: null, status: 'loading', error: null, updatedAt: 0 })
       const [balance, setBalance] = React.useState({ status: 'loading', data: null, error: null, updatedAt: 0 })
       const [rates, setRates] = React.useState({ status: 'loading', data: null, error: null, fetchedAt: 0 })
-      const [topUps, setTopUps] = React.useState(readTopUps)
+      const [topUps, setTopUps] = React.useState(() => [])
       const [currency, setCurrency] = React.useState(() => {
         const stored = readStored(CURRENCY_KEY)
         return CURRENCIES.includes(stored) ? stored : CURRENCIES[0]
@@ -1371,7 +1481,12 @@ window.__ModuleLoader__.load({
       const loadBalance = React.useCallback(async (fresh) => {
         const result = await pollBalance(fresh)
         if (!mounted.current) return
-        setTopUps(readTopUps())
+        try {
+          const list = await fetchTopUps()
+          if (mounted.current) setTopUps(list)
+        } catch {
+          // История пополнений остаётся как была; следующий опрос повторит чтение.
+        }
         setBalance({ status: result.status, data: result.data, error: result.error, updatedAt: result.updatedAt })
       }, [])
 
@@ -1818,6 +1933,13 @@ window.__ModuleLoader__.load({
         rowModels,
         searchText,
         formatCurrency,
+        topUpId,
+        normalizeTopUp,
+        ratesSnapshot,
+        pollRates,
+        fetchTopUps,
+        submitDetectedTopUps,
+        migrateLegacyTopUps,
         components: {
           Metric,
           TotalCard,
@@ -1835,6 +1957,10 @@ window.__ModuleLoader__.load({
         ctx.effect(() => ctx.locale.register(NS, 'ru', DICT), 'expenses: ru dictionary')
         ctx.effect(() => ctx.locale.register(NS, 'en', DICT), 'expenses: en dictionary')
         ctx.effect(() => () => stopBackgroundBalancePoller(), 'expenses: balance poller')
+        ctx.effect(() => {
+          void migrateLegacyTopUps()
+          return () => {}
+        }, 'expenses: topups migration')
         ctx.slots.inject('main', () => ctx.slots.register({
           name: 'main',
           key: PANEL_ID,
