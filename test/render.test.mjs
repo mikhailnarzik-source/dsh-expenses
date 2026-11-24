@@ -520,12 +520,145 @@ test('client.js: страница держит баланс, итоги и та�
   const main = registered.find(entry => entry.options.name === 'main')
   const tree = render(main.component({}))
   const all = elements(tree)
-  assert.equal(withClass(tree, 'dsh-exp-overview').length, 1, 'общий ряд баланса и пополнений')
-  assert.equal(withClass(tree, 'dsh-exp-overview')[0].props.children.length, 2)
-  // Без данных таблица не рисуется, но блок итогов и цен на месте.
+  assert.equal(withClass(tree, 'dsh-exp-overview').length, 1, 'одна карточка «Баланс»')
+  assert.equal([].concat(withClass(tree, 'dsh-exp-overview')[0].props.children).length, 1)
+  const balanceCard = withClass(tree, 'dsh-exp-balance-card')[0]
+  assert.ok(balanceCard, 'карточка баланса')
+  assert.equal(withClass(balanceCard, 'dsh-exp-balance-columns').length, 1, 'две колонки внутри карточки')
+  assert.equal(withClass(balanceCard, 'dsh-exp-topups-embedded').length, 1, 'пополнения — вторая колонка')
+  // Без данных таблица не рисуется, но блок итогов и справка (в аккордеоне) на месте.
   assert.ok(all.some(node => node.props?.className === 'dsh-exp-cards'))
-  assert.ok(all.some(node => node.props?.className === 'dsh-exp-pricing'))
+  assert.ok(all.some(node => node.props?.className === 'dsh-exp-pricing'), 'цены внутри «Дополнительно»')
   assert.equal(withClass(tree, 'dsh-exp-table-scroll').length, 0)
+})
+
+test('client.js: аккордеоны «Дополнительно» и «Опасная зона» свёрнуты, опасно — внизу', async () => {
+  const { registered, test: api } = await loadClient()
+  const main = registered.find(entry => entry.options.name === 'main')
+  const tree = render(main.component({}))
+  const accordions = withClass(tree, 'dsh-exp-acc')
+  assert.equal(accordions.length, 2, 'без данных фильтры не показываются: справка и опасная зона')
+  const titles = accordions.map(node => texts(node).join(' '))
+  assert.match(titles[0], /Дополнительно/, 'первый — справка')
+  assert.match(titles[1], /Опасная зона/, 'второй — опасная зона внизу')
+  assert.ok(accordions[1].props.className.includes('is-danger'), 'опасная зона выделена красным')
+  for (const accordion of accordions) {
+    const toggle = elements(accordion).find(node => node.type === 'button' && node.props['aria-expanded'] !== undefined)
+    assert.ok(toggle, 'у аккордеона есть кнопка-заголовок')
+    assert.equal(toggle.props['aria-expanded'], 'false', 'по умолчанию свёрнуто')
+    const body = elements(accordion).find(node => typeof node.props?.className === 'string' && node.props.className.startsWith('dsh-exp-acc-body'))
+    assert.ok(body, 'тело аккордеона')
+    assert.equal(body.props.hidden, true, 'тело скрыто атрибутом hidden')
+  }
+  // «Дополнительно» содержит цены DeepSeek и курс.
+  assert.ok(elements(accordions[0]).some(node => node.props?.className === 'dsh-exp-pricing'))
+  assert.ok(elements(accordions[0]).some(node => node.props?.className === 'dsh-exp-rate'))
+})
+
+test('client.js: аккордеон «Фильтры» — свёрнут, бейдж активных, сохранение рядом', async () => {
+  const { test: api, t } = await loadClient()
+  const base = { ...api.DEFAULT_FILTERS }
+  const collapsed = render(api.components.FiltersAccordion({
+    t,
+    applied: base,
+    draft: base,
+    dirty: false,
+    onDraft: () => {},
+    onSave: () => {},
+    onRevert: () => {},
+  }))
+  assert.equal(collapsed.props.className, 'dsh-exp-acc')
+  const toggle = elements(collapsed).find(node => node.type === 'button' && node.props['aria-expanded'] !== undefined)
+  assert.equal(toggle.props['aria-expanded'], 'false')
+  assert.match(texts(collapsed).join(' '), /Фильтры/)
+  const badge = elements(collapsed).find(node => node.props?.className === 'dsh-exp-acc-badge')
+  assert.equal(texts(badge).join(''), 'не активны')
+  const body = elements(collapsed).find(node => node.props?.className === 'dsh-exp-acc-body')
+  assert.equal(body.props.hidden, true)
+  // Поля и кнопки сохранения лежат в теле аккордеона.
+  const fields = elements(collapsed).filter(node => node.props?.className === 'dsh-exp-field')
+  assert.ok(fields.length >= 4, 'поля фильтров внутри аккордеона')
+  const apply = elements(collapsed).find(node => node.type === 'button' && texts(node).join('') === t('filtersApply'))
+  assert.ok(apply, 'кнопка «Применить фильтры» рядом с полями')
+  assert.equal(apply.props.disabled, true, 'без правок кнопка неактивна')
+
+  const active = { ...base, mode: 'cloud', period: '7d', costMin: '2' }
+  const withActive = render(api.components.FiltersAccordion({
+    t,
+    applied: active,
+    draft: { ...active, tokensMax: '900' },
+    dirty: true,
+    onDraft: () => {},
+    onSave: () => {},
+    onRevert: () => {},
+  }))
+  const activeBadge = elements(withActive).find(node => node.props?.className === 'dsh-exp-acc-badge')
+  assert.equal(texts(activeBadge).join(''), 'активны: 3')
+  const dirtyBadge = elements(withActive).find(node => typeof node.props?.className === 'string' && node.props.className.startsWith('dsh-exp-save-badge'))
+  assert.equal(dirtyBadge.props.className, 'dsh-exp-save-badge is-dirty')
+  assert.equal(texts(dirtyBadge).join(''), 'есть изменения')
+  assert.equal(elements(withActive).find(node => node.type === 'button' && texts(node).join('') === t('filtersApply')).props.disabled, false)
+})
+
+test('client.js: активные фильтры считаются для бейджа', async () => {
+  const { test: api } = await loadClient()
+  assert.equal(api.activeFilterCount(api.DEFAULT_FILTERS), 0)
+  assert.equal(api.activeFilterCount({ ...api.DEFAULT_FILTERS, mode: 'cloud', period: '7d' }), 2)
+  assert.equal(api.activeFilterCount({ ...api.DEFAULT_FILTERS, onlyToday: true, costMin: '2', tokensMax: '900' }), 3)
+  // Даты учитываются только при своём периоде.
+  assert.equal(api.activeFilterCount({ ...api.DEFAULT_FILTERS, period: 'custom', dateFrom: '2026-01-01' }), 2)
+  assert.equal(api.activeFilterCount({ ...api.DEFAULT_FILTERS, dateFrom: '2026-01-01' }), 0)
+})
+
+test('client.js: Accordion раскрывается и сохраняет состояние', async () => {
+  const { test: api, storage } = await loadClient()
+  const collapsed = render(api.components.Accordion({ title: 'Фильтры', children: 'тело' }))
+  assert.equal(collapsed.props.className, 'dsh-exp-acc')
+  const collapsedToggle = elements(collapsed).find(node => node.type === 'button')
+  assert.equal(collapsedToggle.props['aria-expanded'], 'false')
+  const collapsedBody = elements(collapsed).find(node => node.props?.hidden !== undefined)
+  assert.equal(collapsedBody.props.hidden, true)
+
+  const open = render(api.components.Accordion({ title: 'Фильтры', defaultOpen: true, children: 'тело' }))
+  const openToggle = elements(open).find(node => node.type === 'button')
+  assert.equal(openToggle.props['aria-expanded'], 'true')
+  assert.equal(elements(open).find(node => node.props?.hidden !== undefined).props.hidden, false)
+
+  // Персистентность: заголовок пишет состояние в localStorage.
+  const persisted = render(api.components.Accordion({ title: 'Фильтры', storageKey: 'dsh-expenses:test-open', children: 'тело' }))
+  elements(persisted).find(node => node.type === 'button').props.onClick()
+  assert.equal(storage.get('dsh-expenses:test-open'), '1', 'раскрытие запомнено')
+})
+
+test('client.js: SaveRow показывает «есть изменения» и блокирует кнопки без правок', async () => {
+  const { test: api } = await loadClient()
+  const dirty = render(api.components.SaveRow({ dirty: true, saveLabel: 'Применить фильтры' }))
+  assert.equal(dirty.props.className, 'dsh-exp-save-row')
+  const badge = elements(dirty).find(node => typeof node.props?.className === 'string' && node.props.className.startsWith('dsh-exp-save-badge'))
+  assert.equal(badge.props.className, 'dsh-exp-save-badge is-dirty')
+  assert.equal(texts(badge).join(''), 'есть изменения')
+  const buttons = elements(dirty).filter(node => node.type === 'button')
+  assert.deepEqual(buttons.map(node => texts(node).join('')), ['Отменить', 'Применить фильтры'])
+  assert.equal(buttons[0].props.disabled, false, 'есть что отменять')
+
+  const clean = render(api.components.SaveRow({ dirty: false }))
+  const cleanBadge = elements(clean).find(node => typeof node.props?.className === 'string' && node.props.className.startsWith('dsh-exp-save-badge'))
+  assert.equal(cleanBadge.props.className, 'dsh-exp-save-badge')
+  assert.equal(texts(cleanBadge).join(''), 'изменений нет')
+  for (const button of elements(clean).filter(node => node.type === 'button')) {
+    assert.equal(button.props.disabled, true, 'без изменений кнопки неактивны')
+  }
+})
+
+test('client.js: таблица — фиксированная шапка и прокрутка внутри', async () => {
+  const { test: api } = await loadClient()
+  assert.match(api.CSS, /\.dsh-exp-table thead th\{position:sticky;top:0/)
+  assert.match(api.CSS, /\.dsh-exp-table-scroll\{[^}]*max-height:min\(72vh,640px\)/)
+  assert.match(api.CSS, /\.dsh-exp-table-scroll\{[^}]*overflow-y:auto/)
+  assert.match(api.CSS, /\.dsh-exp-acc-body\[hidden\]\{display:none\}/)
+  assert.match(api.CSS, /\.dsh-exp-balance-columns\{display:grid;grid-template-columns:minmax\(0,1\.3fr\) minmax\(0,1fr\)/)
+  assert.match(api.CSS, /\.dsh-exp-save-badge\.is-dirty\{[^}]*state-warn-primary/)
+  assert.ok(api.CSS.includes('.dsh-exp-balance-columns{grid-template-columns:minmax(0,1fr)}'), 'на 900 колонки становятся одной')
 })
 
 test('client.js: строки фильтров и пейджера есть в словаре', async () => {

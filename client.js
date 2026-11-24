@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
     /** A dismissed offer is remembered per available version. */
     const UPDATE_DISMISS_KEY = 'dsh-expenses:update-dismissed'
     /** Build identity reported to the platform on balance requests. */
-    const CLIENT_VERSION = '0.4.15'
+    const CLIENT_VERSION = '0.4.16'
     const CURRENCY_KEY = 'dsh-expenses:currency'
     const CURRENCIES = ['₽', '$', '¥']
     /** Currency symbol ↔ ISO code, the vocabulary the rate line and the price conversion use. */
@@ -51,6 +51,10 @@ window.__ModuleLoader__.load({
     /** Table sort and filter preferences, remembered per browser like the currency. */
     const TABLE_SORT_KEY = 'dsh-expenses:table-sort'
     const TABLE_FILTERS_KEY = 'dsh-expenses:table-filters'
+    /** Состояние аккордеонов: фильтры, справка и опасная зона — свёрнуты по умолчанию. */
+    const FILTERS_OPEN_KEY = 'dsh-expenses:filters-open'
+    const MORE_OPEN_KEY = 'dsh-expenses:more-open'
+    const DANGER_OPEN_KEY = 'dsh-expenses:danger-open'
     /** Sessions per page and top-ups per page in the two histories. */
     const SESSION_PAGE_SIZE = 30
     const TOPUP_PAGE_SIZE = 5
@@ -195,6 +199,23 @@ window.__ModuleLoader__.load({
       newCommits: 'новых коммитов',
       behindPrefix: 'позади на',
       updateClose: 'Скрыть предложение',
+      filtersTitle: 'Фильтры',
+      filtersActive: 'активны',
+      filtersNone: 'не активны',
+      filtersHint: 'Режим, период, границы стоимости и токенов. Изменения применяются кнопкой — пока их нет, таблица показывает прежний фильтр.',
+      filtersApply: 'Применить фильтры',
+      filtersRevert: 'Отменить',
+      changesPresent: 'есть изменения',
+      changesNone: 'изменений нет',
+      moreTitle: 'Дополнительно',
+      moreBadge: 'справка',
+      moreHint: 'Цены DeepSeek, курс валют и источник — это справка, а не ежедневная настройка, поэтому раздел свёрнут.',
+      dangerTitle: 'Опасная зона',
+      dangerHint: 'Сброс вернёт валюту, сортировку и фильтры к значениям по умолчанию. История расходов и пополнений не удаляется.',
+      dangerReset: 'Сбросить настройки панели',
+      dangerConfirm: 'Нажмите ещё раз, чтобы сбросить',
+      dangerDone: 'Настройки панели сброшены.',
+      balanceTopUpsTitle: 'Пополнения',
     }
 
     const CSS = `
@@ -315,8 +336,9 @@ window.__ModuleLoader__.load({
 .dsh-exp-input:focus,.dsh-exp-select:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent)}
 .dsh-exp-input::placeholder{color:var(--dsw-alias-label-tertiary)}
 .dsh-exp-filters .dsh-exp-button{margin-left:auto}
-.dsh-exp-table-scroll{width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden}
+.dsh-exp-table-scroll{width:100%;max-width:100%;max-height:min(72vh,640px);overflow-x:auto;overflow-y:auto;overscroll-behavior:contain}
 .dsh-exp-table{width:100%;min-width:700px;border-collapse:collapse;table-layout:fixed;font-size:13px;font-variant-numeric:tabular-nums}
+.dsh-exp-table thead th{position:sticky;top:0;z-index:2}
 .dsh-exp-table th{padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500;line-height:18px;text-align:left;white-space:nowrap}
 .dsh-exp-table th[aria-sort="ascending"],.dsh-exp-table th[aria-sort="descending"]{color:var(--dsw-alias-label-primary)}
 .dsh-exp-table td{padding:10px 12px;border-bottom:.5px solid var(--dsw-alias-border-l1);vertical-align:middle;min-width:0}
@@ -376,9 +398,45 @@ window.__ModuleLoader__.load({
 .dsh-exp-update-close{flex:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:16px;line-height:1;cursor:pointer}
 .dsh-exp-update-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsh-exp-update-current{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+/* Аккордеоны второстепенного: фильтры, справка, опасная зона. */
+.dsh-exp-acc{display:flex;flex-direction:column;min-width:0;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;background:var(--dsw-alias-bg-layer-1)}
+.dsh-exp-acc.is-danger{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 38%,var(--dsw-alias-border-l2));background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 4%,var(--dsw-alias-bg-layer-1))}
+.dsh-exp-acc-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;min-width:0;padding:10px 12px}
+.dsh-exp-acc-toggle{display:inline-flex;flex:1 1 220px;flex-wrap:wrap;align-items:center;gap:8px;min-width:0;padding:4px 2px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13.5px;font-weight:600;line-height:20px;text-align:left;cursor:pointer}
+.dsh-exp-acc-toggle:hover{color:var(--dsw-alias-brand-primary)}
+.dsh-exp-acc-toggle:focus-visible{outline:2px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent);outline-offset:2px}
+.dsh-exp-acc-chevron{flex:none;width:14px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1}
+.dsh-exp-acc-title{min-width:0;overflow-wrap:anywhere}
+.dsh-exp-acc.is-danger .dsh-exp-acc-title{color:var(--dsw-alias-state-error-primary)}
+.dsh-exp-acc-badge{flex:none;box-sizing:border-box;display:inline-flex;align-items:center;gap:5px;min-height:22px;padding:1px 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;line-height:16px;white-space:nowrap}
+.dsh-exp-acc-badge::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;background:currentColor}
+.dsh-exp-acc.is-danger .dsh-exp-acc-badge{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);color:var(--dsw-alias-state-error-primary)}
+.dsh-exp-acc-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto;min-width:0}
+.dsh-exp-acc-body{display:flex;flex-direction:column;gap:10px;min-width:0;padding:0 12px 12px;border-top:.5px solid var(--dsw-alias-border-l1);margin-top:0;padding-top:10px}
+.dsh-exp-acc-body[hidden]{display:none}
+.dsh-exp-acc-body .dsh-exp-filters{padding:0;border-bottom:0}
+.dsh-exp-acc-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;text-align:justify;hyphens:auto}
+.dsh-exp-acc-body .dsh-exp-pricing{margin:0}
+/* Ряд сохранения рядом с полями: бейдж изменений и кнопки. */
+.dsh-exp-save-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;min-width:0;margin-top:2px}
+.dsh-exp-save-badge{box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:1px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;line-height:18px;white-space:nowrap}
+.dsh-exp-save-badge::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;background:currentColor}
+.dsh-exp-save-badge.is-dirty{border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 55%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 14%,transparent);color:var(--dsw-alias-state-warn-primary)}
+.dsh-exp-save-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}
+/* Баланс и пополнения: одна карточка, две колонки. */
+.dsh-exp-balance-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;min-width:0}
+.dsh-exp-balance-title{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;min-width:0}
+.dsh-exp-balance-columns{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;align-items:stretch;min-width:0}
+.dsh-exp-balance-col{display:flex;flex-direction:column;gap:12px;min-width:0;justify-content:flex-start}
+.dsh-exp-balance-col + .dsh-exp-balance-col{border-left:.5px solid var(--dsw-alias-border-l1);padding-left:16px}
+.dsh-exp-topups-embedded,.dsh-exp-topups-embedded:hover{border:0;border-radius:0;background:transparent;padding:0;height:auto}
+.dsh-exp-topups-embedded::before{display:none}
+.dsh-exp-topups-embedded .dsh-exp-topups-hint{display:none}
+.dsh-exp-topups-empty{min-height:64px}
+.dsh-exp-danger-note{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;text-align:justify;hyphens:auto}
 /* Адаптив: 900 — одна колонка обзора, 640 — компактные отступы. */
-@media (max-width:900px){.dsh-exp-overview{grid-template-columns:minmax(0,1fr)}.dsh-exp-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:640px){.dsh-exp-content{padding:16px 16px 32px}.dsh-exp-heading{gap:10px}.dsh-exp-actions{width:100%;justify-content:flex-start}.dsh-exp-actions .dsh-exp-button{flex:1 1 auto}.dsh-exp-card,.dsh-exp-pricing,.dsh-exp-topups{padding:14px}.dsh-exp-search{flex:1 1 100%}.dsh-exp-count{margin-left:0;flex:1 1 100%}.dsh-exp-field{flex:1 1 45%;max-width:none}.dsh-exp-filters .dsh-exp-button{margin-left:0;flex:1 1 100%}.dsh-exp-table{min-width:640px}.dsh-exp-table th,.dsh-exp-table td{padding:8px}.dsh-exp-balance-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:900px){.dsh-exp-overview{grid-template-columns:minmax(0,1fr)}.dsh-exp-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.dsh-exp-balance-columns{grid-template-columns:minmax(0,1fr)}.dsh-exp-balance-col + .dsh-exp-balance-col{border-left:0;padding-left:0;border-top:.5px solid var(--dsw-alias-border-l1);padding-top:12px}}
+@media (max-width:640px){.dsh-exp-content{padding:16px 16px 32px}.dsh-exp-heading{gap:10px}.dsh-exp-actions{width:100%;justify-content:flex-start}.dsh-exp-actions .dsh-exp-button{flex:1 1 auto}.dsh-exp-card,.dsh-exp-pricing,.dsh-exp-topups{padding:14px}.dsh-exp-search{flex:1 1 100%}.dsh-exp-count{margin-left:0;flex:1 1 100%}.dsh-exp-field{flex:1 1 45%;max-width:none}.dsh-exp-filters .dsh-exp-button{margin-left:0;flex:1 1 100%}.dsh-exp-table{min-width:640px}.dsh-exp-table th,.dsh-exp-table td{padding:8px}.dsh-exp-balance-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.dsh-exp-acc-head{padding:10px}.dsh-exp-acc-toggle{flex:1 1 100%}.dsh-exp-acc-actions{width:100%;margin-left:0}.dsh-exp-acc-body{padding:10px}.dsh-exp-save-actions{width:100%;margin-left:0}.dsh-exp-save-actions .dsh-exp-button{flex:1 1 auto}.dsh-exp-table-scroll{max-height:min(64vh,520px)}}
     `
 
     /** Read one stored preference without letting a browser restriction crash the panel. */
@@ -1065,6 +1123,148 @@ window.__ModuleLoader__.load({
         || (Number(row.todayOutput) || 0) > 0
     }
 
+    /** Сколько фильтров отличается от нейтрального состояния — число на бейдже аккордеона. */
+    function activeFilterCount(filters) {
+      const state = filters !== null && typeof filters === 'object' ? filters : DEFAULT_FILTERS
+      let count = 0
+      if (state.onlyToday === true) count += 1
+      if (state.mode !== 'all') count += 1
+      if (state.period !== 'all') count += 1
+      if (state.period === 'custom') {
+        for (const key of ['dateFrom', 'dateTo']) {
+          if (String(state[key] ?? '').trim() !== '') count += 1
+        }
+      }
+      for (const key of ['costMin', 'costMax', 'tokensMin', 'tokensMax']) {
+        if (String(state[key] ?? '').trim() !== '') count += 1
+      }
+      return count
+    }
+
+    /** Свёрнутый раздел: кнопка-заголовок, бейдж и тело, скрытое атрибутом `hidden`. */
+    function Accordion(props) {
+      const storageKey = typeof props.storageKey === 'string' ? props.storageKey : ''
+      const [open, setOpen] = React.useState(() => {
+        if (typeof props.defaultOpen === 'boolean') return props.defaultOpen
+        return storageKey !== '' && readStored(storageKey) === '1'
+      })
+      const toggle = () => {
+        const next = open !== true
+        if (storageKey !== '') store(storageKey, next ? '1' : '0')
+        setOpen(next)
+      }
+      const bodyId = typeof props.id === 'string' && props.id !== '' ? props.id : undefined
+      const tone = props.tone === 'danger' ? ' is-danger' : ''
+      return h('section', { className: `dsh-exp-acc${tone}${open === true ? ' is-open' : ''}` },
+        h('div', { className: 'dsh-exp-acc-head' },
+          h('button', {
+            type: 'button',
+            className: 'dsh-exp-acc-toggle',
+            ...(bodyId === undefined ? {} : { 'aria-controls': bodyId }),
+            'aria-expanded': open === true ? 'true' : 'false',
+            onClick: toggle,
+          },
+            h('span', { className: 'dsh-exp-acc-chevron', 'aria-hidden': true }, open === true ? '▾' : '▸'),
+            h('span', { className: 'dsh-exp-acc-title' }, props.title),
+            typeof props.badge === 'string' && props.badge !== ''
+              ? h('span', { className: 'dsh-exp-acc-badge' }, props.badge)
+              : null),
+          props.actions === undefined || props.actions === null
+            ? null
+            : h('div', { className: 'dsh-exp-acc-actions' }, props.actions)),
+        h('div', {
+          ...(bodyId === undefined ? {} : { id: bodyId }),
+          className: 'dsh-exp-acc-body',
+          hidden: open !== true,
+        }, props.children))
+    }
+
+    /** Ряд «есть изменения» + «Отменить»/«Применить» рядом с полями карточки. */
+    function SaveRow(props) {
+      const dirty = props.dirty === true
+      const busy = props.busy === true
+      return h('div', { className: 'dsh-exp-save-row' },
+        h('span', {
+          className: dirty ? 'dsh-exp-save-badge is-dirty' : 'dsh-exp-save-badge',
+          role: 'status',
+        }, dirty ? (props.dirtyLabel ?? 'есть изменения') : (props.cleanLabel ?? 'изменений нет')),
+        h('div', { className: 'dsh-exp-save-actions' },
+          h('button', {
+            type: 'button',
+            className: 'dsh-exp-button dsh-exp-button-secondary dsh-exp-button-small',
+            disabled: !dirty || busy,
+            onClick: props.onRevert,
+          }, props.revertLabel ?? 'Отменить'),
+          h('button', {
+            type: 'button',
+            className: 'dsh-exp-button dsh-exp-button-primary dsh-exp-button-small',
+            disabled: !dirty || busy,
+            onClick: props.onSave,
+          }, props.saveLabel ?? 'Сохранить')))
+    }
+
+    /** Аккордеон «Фильтры»: черновик полей, бейдж активных и «Сохранить» рядом с полями. */
+    function FiltersAccordion(props) {
+      const t = props.t
+      const draft = props.draft !== null && typeof props.draft === 'object' ? props.draft : DEFAULT_FILTERS
+      const active = activeFilterCount(props.applied)
+      const field = (key, label, extra) => h('label', { className: 'dsh-exp-field' },
+        h('span', { className: 'dsh-exp-field-label' }, label),
+        h('input', {
+          className: 'dsh-exp-input',
+          value: draft[key],
+          'aria-label': label,
+          ...(extra ?? {}),
+          onChange: event => props.onDraft(key, event.target.value),
+        }))
+      const periodOptions = [
+        ['all', t('periodAll')],
+        ['today', t('periodToday')],
+        ['7d', t('period7')],
+        ['30d', t('period30')],
+        ['custom', t('periodCustom')],
+      ]
+      return h(Accordion, {
+        id: 'dsh-exp-filters',
+        storageKey: FILTERS_OPEN_KEY,
+        title: t('filtersTitle'),
+        badge: active > 0 ? `${t('filtersActive')}: ${active}` : t('filtersNone'),
+      },
+        h('p', { className: 'dsh-exp-acc-hint' }, t('filtersHint')),
+        h('div', { className: 'dsh-exp-filters' },
+          h('label', { className: 'dsh-exp-field' },
+            h('span', { className: 'dsh-exp-field-label' }, t('modeLabel')),
+            h('select', {
+              className: 'dsh-exp-select',
+              value: draft.mode,
+              'aria-label': t('modeLabel'),
+              onChange: event => props.onDraft('mode', event.target.value),
+            }, [['all', t('modeAll')], ['cloud', t('modeCloud')], ['local', t('modeLocal')]].map(([value, label]) => h('option', { key: value, value }, label)))),
+          h('label', { className: 'dsh-exp-field' },
+            h('span', { className: 'dsh-exp-field-label' }, t('period')),
+            h('select', {
+              className: 'dsh-exp-select',
+              value: draft.period,
+              'aria-label': t('period'),
+              onChange: event => props.onDraft('period', event.target.value),
+            }, periodOptions.map(([value, label]) => h('option', { key: value, value }, label)))),
+          draft.period === 'custom' ? field('dateFrom', t('dateFrom'), { type: 'date' }) : null,
+          draft.period === 'custom' ? field('dateTo', t('dateTo'), { type: 'date' }) : null,
+          field('costMin', t('costFrom'), { type: 'number', min: '0', step: 'any', inputMode: 'decimal', placeholder: '0' }),
+          field('costMax', t('costTo'), { type: 'number', min: '0', step: 'any', inputMode: 'decimal', placeholder: '0' }),
+          field('tokensMin', t('tokensFrom'), { type: 'number', min: '0', step: '1', inputMode: 'numeric', placeholder: '0' }),
+          field('tokensMax', t('tokensTo'), { type: 'number', min: '0', step: '1', inputMode: 'numeric', placeholder: '0' })),
+        h(SaveRow, {
+          dirty: props.dirty === true,
+          dirtyLabel: t('changesPresent'),
+          cleanLabel: t('changesNone'),
+          saveLabel: t('filtersApply'),
+          revertLabel: t('filtersRevert'),
+          onSave: props.onSave,
+          onRevert: props.onRevert,
+        }))
+    }
+
     /** One small labelled figure inside a card. */
     function Metric(props) {
       const title = typeof props.title === 'string' ? props.title : props.label
@@ -1203,6 +1403,7 @@ window.__ModuleLoader__.load({
     /** The observed top-up history: five per page once there is more than one page. */
     function TopUps(props) {
       const t = props.t
+      const embedded = props.embedded === true
       const entries = Array.isArray(props.entries) ? props.entries : []
       const [page, setPage] = React.useState(1)
       const paged = paginate(entries, page, TOPUP_PAGE_SIZE)
@@ -1214,7 +1415,7 @@ window.__ModuleLoader__.load({
         totals.set(currency, (totals.get(currency) ?? 0) + amount)
       }
       const totalText = [...totals.entries()].map(([currency, amount]) => formatCurrency(amount, currency)).join(' · ')
-      return h('section', { className: 'dsh-exp-topups' },
+      return h('section', { className: embedded ? 'dsh-exp-topups dsh-exp-topups-embedded' : 'dsh-exp-topups' },
         h('div', { className: 'dsh-exp-topups-head' },
           h('span', { className: 'dsh-exp-card-title' }, t('topUps')),
           entries.length === 0 ? null : h('span', { className: 'dsh-exp-count', title: `${t('records')}: ${formatTokens(entries.length)}` }, `${formatTokens(entries.length)} ${t('records')}`)),
@@ -1320,8 +1521,27 @@ window.__ModuleLoader__.load({
         h(RateLine, { rates: props.rates, t }))
     }
 
-    /** The balance card: wallets, the four overview metrics and the top-up action share one frame. */
-    function BalanceCard(props) {
+    /** Кнопка «Пополнить» рядом с балансом: ссылка на сайт или неактивная кнопка с причиной. */
+    function TopUpAction(props) {
+      const t = props.t
+      return typeof props.url === 'string' && props.url !== ''
+        ? h('a', {
+            className: 'dsh-exp-button dsh-exp-button-primary',
+            href: props.url,
+            target: '_blank',
+            rel: 'noreferrer noopener',
+          }, `${t('topUpAction')} ↗`)
+        : h('button', {
+            type: 'button',
+            className: 'dsh-exp-button dsh-exp-button-primary',
+            disabled: true,
+            title: t('topUpUnavailable'),
+            'aria-label': t('topUpUnavailable'),
+          }, t('topUpAction'))
+    }
+
+    /** Кошельки и метрики — левая колонка единой карточки «Баланс». */
+    function BalanceWallets(props) {
       const t = props.t
       const balance = props.balance
       const data = balance.data
@@ -1345,17 +1565,7 @@ window.__ModuleLoader__.load({
       } else if (currencies.length === 0) {
         message = t('balanceFailed')
       }
-      const topUpUrl = ready && data.links !== null && typeof data.links === 'object'
-        && typeof data.links.topUpUrl === 'string' && data.links.topUpUrl !== ''
-        ? data.links.topUpUrl
-        : ''
-      return h('section', { className: 'dsh-exp-card dsh-exp-balance-card' },
-        h('div', { className: 'dsh-exp-balance-head' },
-          h('span', { className: 'dsh-exp-card-title' }, t('balance')),
-          ready && balance.updatedAt > 0
-            ? h('span', { className: 'dsh-exp-wallet-updated' },
-                `${t('balanceUpdatedPrefix')} ${timeFormat.format(new Date(balance.updatedAt))}`)
-            : null),
+      return h('div', { className: 'dsh-exp-balance-col' },
         message === null
           ? h('div', { className: 'dsh-exp-wallets' }, currencies.map(currency => {
               const wallet = wallets.find(item => item.currency === currency)
@@ -1389,38 +1599,61 @@ window.__ModuleLoader__.load({
             value: props.averageCost === null || props.averageCost === undefined ? '—' : formatMoney(props.averageCost, props.symbol),
             title: t('averageHint'),
           }),
-          h(Metric, { label: t('rateLabel'), value: props.rateText })),
+          h(Metric, { label: t('rateLabel'), value: props.rateText })))
+    }
+
+    /**
+     * Единая карточка «Баланс»: слева кошельки и метрики, справа история
+     * пополнений, «Пополнить» — в шапке рядом с балансом.
+     */
+    function BalanceCard(props) {
+      const t = props.t
+      const balance = props.balance
+      const data = balance.data
+      const ready = balance.status === 'ready' && data !== null && typeof data === 'object'
+      const topUps = Array.isArray(props.topUps) ? props.topUps : []
+      const topUpUrl = ready && data.links !== null && typeof data.links === 'object'
+        && typeof data.links.topUpUrl === 'string' && data.links.topUpUrl !== ''
+        ? data.links.topUpUrl
+        : ''
+      return h('section', { className: 'dsh-exp-card dsh-exp-balance-card' },
+        h('div', { className: 'dsh-exp-balance-head' },
+          h('div', { className: 'dsh-exp-balance-title' },
+            h('span', { className: 'dsh-exp-card-title' }, t('balance')),
+            ready && balance.updatedAt > 0
+              ? h('span', { className: 'dsh-exp-wallet-updated' },
+                  `${t('balanceUpdatedPrefix')} ${timeFormat.format(new Date(balance.updatedAt))}`)
+              : null),
+          h(TopUpAction, { t, url: topUpUrl })),
+        h('div', { className: 'dsh-exp-balance-columns' },
+          h(BalanceWallets, {
+            balance,
+            todayCost: props.todayCost,
+            weekCost: props.weekCost,
+            averageCost: props.averageCost,
+            rateText: props.rateText,
+            symbol: props.symbol,
+            t,
+          }),
+          h('div', { className: 'dsh-exp-balance-col' },
+            h(TopUps, { entries: topUps, t, embedded: true }))),
         h('div', { className: 'dsh-exp-card-footer' },
-          topUpUrl !== ''
-            ? h('a', {
-                className: 'dsh-exp-button dsh-exp-button-primary',
-                href: topUpUrl,
-                target: '_blank',
-                rel: 'noreferrer noopener',
-              }, `${t('topUpAction')} ↗`)
-            : h('button', {
-                type: 'button',
-                className: 'dsh-exp-button dsh-exp-button-primary',
-                disabled: true,
-                title: t('topUpUnavailable'),
-                'aria-label': t('topUpUnavailable'),
-              }, t('topUpAction')),
           h('span', { className: 'dsh-exp-card-note' }, t('balanceFooterHint'))))
     }
 
-    /** One row: the balance card and the top-up history, equal height, no separate window. */
+    /** Одна карточка «Баланс»: баланс, метрики и пополнения в двух колонках. */
     function BalanceSection(props) {
       return h('div', { className: 'dsh-exp-overview' },
         h(BalanceCard, {
           balance: props.balance,
+          topUps: props.topUps,
           todayCost: props.todayCost,
           weekCost: props.weekCost,
           averageCost: props.averageCost,
           rateText: props.rateText,
           symbol: props.symbol,
           t: props.t,
-        }),
-        h(TopUps, { entries: props.topUps, t: props.t }))
+        }))
     }
 
     /** In-panel update row: available version, progress and a restart hint. */
@@ -1548,6 +1781,10 @@ window.__ModuleLoader__.load({
       const [page, setPage] = React.useState(1)
       const [sort, setSort] = React.useState(readTableSort)
       const [filters, setFilters] = React.useState(readTableFilters)
+      /** Черновик фильтров: применяется кнопкой рядом с полями, как в аудите настроек. */
+      const [filterDraft, setFilterDraft] = React.useState(readTableFilters)
+      const [dangerArmed, setDangerArmed] = React.useState(false)
+      const [dangerNote, setDangerNote] = React.useState('')
       const [showBreakdown, setShowBreakdown] = React.useState(false)
       const [expandedRows, setExpandedRows] = React.useState(() => ({}))
       const [update, refreshUpdate] = useUpdateState(60000)
@@ -1689,9 +1926,26 @@ window.__ModuleLoader__.load({
       const setFilter = (key, value) => {
         const next = { ...filters, [key]: value }
         setFilters(next)
+        setFilterDraft(current => ({ ...current, [key]: value }))
         writeJson(TABLE_FILTERS_KEY, next)
         setPage(1)
       }
+
+      /** Правка одного поля черновика: таблица меняется только по «Применить фильтры». */
+      const setDraftFilter = (key, value) => {
+        setFilterDraft(current => ({ ...current, [key]: value }))
+      }
+
+      /** Применить черновик фильтров к таблице и запомнить его. */
+      const applyFilters = () => {
+        const next = { ...filterDraft }
+        setFilters(next)
+        writeJson(TABLE_FILTERS_KEY, next)
+        setPage(1)
+      }
+
+      /** Вернуть поля к применённому фильтру. */
+      const revertFilters = () => setFilterDraft({ ...filters })
 
       /** The search field shares the filter state: it also rewinds to the first page. */
       const setSearch = (value) => {
@@ -1704,8 +1958,29 @@ window.__ModuleLoader__.load({
         const next = { ...DEFAULT_FILTERS }
         setQuery('')
         setFilters(next)
+        setFilterDraft({ ...next })
         writeJson(TABLE_FILTERS_KEY, next)
         setPage(1)
+      }
+
+      /**
+       * «Опасная зона»: вернуть валюту, сортировку и фильтры к умолчаниям.
+       * История расходов и пополнений не трогается — только настройки вида.
+       */
+      const resetPanelSettings = () => {
+        const nextSort = { key: 'date', direction: 'desc' }
+        const nextFilters = { ...DEFAULT_FILTERS }
+        for (const key of [CURRENCY_KEY, TABLE_SORT_KEY, TABLE_FILTERS_KEY]) store(key, '')
+        setCurrency(CURRENCIES[0])
+        setSort(nextSort)
+        setFilters(nextFilters)
+        setFilterDraft({ ...nextFilters })
+        setQuery('')
+        setExpandedRows({})
+        setShowBreakdown(false)
+        setPage(1)
+        setDangerArmed(false)
+        setDangerNote(t('dangerDone'))
       }
 
       /** Раскрыть/свернуть разбивку по субагентам у одной строки. */
@@ -1717,19 +1992,6 @@ window.__ModuleLoader__.load({
           return next
         })
       }
-
-      const periodOptions = [
-        ['all', t('periodAll')],
-        ['today', t('periodToday')],
-        ['7d', t('period7')],
-        ['30d', t('period30')],
-        ['custom', t('periodCustom')],
-      ]
-
-      /** One labelled range field; the numeric and date variants share the styling. */
-      const filterField = (key, label, props) => h('label', { className: 'dsh-exp-field' },
-        h('span', { className: 'dsh-exp-field-label' }, label),
-        h('input', { className: 'dsh-exp-input', value: filters[key], 'aria-label': label, onChange: event => setFilter(key, event.target.value), ...props }))
 
       /** Ask the host for a fresh GitHub check and show the outcome next to the button. */
       const checkUpdates = async () => {
@@ -1778,6 +2040,9 @@ window.__ModuleLoader__.load({
         }, label, sort.key === key
           ? h('span', { className: 'dsh-exp-sort-ind', 'aria-hidden': true }, sort.direction === 'asc' ? '▲' : '▼')
           : null))
+
+      /** Признак несохранённых правок фильтров. */
+      const filtersDirty = JSON.stringify(filterDraft) !== JSON.stringify(filters)
 
       return h('section', { className: 'dsh-exp-page', 'aria-label': t('title') },
         h('style', null, CSS),
@@ -1846,20 +2111,27 @@ window.__ModuleLoader__.load({
             h('div', { className: 'dsh-exp-cards' },
               h(TotalCard, { title: t('today'), totals: totals.today, cost: toDisplay(totals.today.costUsd), symbol: displaySymbol, t }),
               h(TotalCard, { title: t('allTime'), totals: totals.all, cost: toDisplay(totals.all.costUsd), symbol: displaySymbol, t })),
-            h(PricingBlock, {
-              pricing: data === null ? null : data.pricing,
-              rates,
-              rateData,
-              displayCode,
-              displaySymbol,
-              currency: symbol,
-              onCurrency: (next) => {
-                const value = CURRENCIES.includes(next) ? next : CURRENCIES[0]
-                setCurrency(value)
-                store(CURRENCY_KEY, value)
-              },
-              t,
-            }),
+            h(Accordion, {
+              id: 'dsh-exp-more',
+              storageKey: MORE_OPEN_KEY,
+              title: t('moreTitle'),
+              badge: t('moreBadge'),
+            },
+              h('p', { className: 'dsh-exp-acc-hint' }, t('moreHint')),
+              h(PricingBlock, {
+                pricing: data === null ? null : data.pricing,
+                rates,
+                rateData,
+                displayCode,
+                displaySymbol,
+                currency: symbol,
+                onCurrency: (next) => {
+                  const value = CURRENCIES.includes(next) ? next : CURRENCIES[0]
+                  setCurrency(value)
+                  store(CURRENCY_KEY, value)
+                },
+                t,
+              })),
             h('div', { className: 'dsh-exp-table-wrap' },
               rows.length > 0
                 ? h('div', { className: 'dsh-exp-toolbar' },
@@ -1905,34 +2177,15 @@ window.__ModuleLoader__.load({
                       shownCost === null ? null : ` · ${t('shownCost')}: ${formatMoney(shownCost, displaySymbol)}`))
                 : null,
               rows.length > 0
-                ? h('div', { className: 'dsh-exp-filters' },
-                    h('label', { className: 'dsh-exp-field' },
-                      h('span', { className: 'dsh-exp-field-label' }, t('modeLabel')),
-                      h('select', {
-                        className: 'dsh-exp-select',
-                        value: filters.mode,
-                        'aria-label': t('modeLabel'),
-                        onChange: event => setFilter('mode', event.target.value),
-                      }, [['all', t('modeAll')], ['cloud', t('modeCloud')], ['local', t('modeLocal')]].map(([value, label]) => h('option', { key: value, value }, label)))),
-                    h('label', { className: 'dsh-exp-field' },
-                      h('span', { className: 'dsh-exp-field-label' }, t('period')),
-                      h('select', {
-                        className: 'dsh-exp-select',
-                        value: filters.period,
-                        'aria-label': t('period'),
-                        onChange: event => setFilter('period', event.target.value),
-                      }, periodOptions.map(([value, label]) => h('option', { key: value, value }, label)))),
-                    filters.period === 'custom' ? filterField('dateFrom', t('dateFrom'), { type: 'date' }) : null,
-                    filters.period === 'custom' ? filterField('dateTo', t('dateTo'), { type: 'date' }) : null,
-                    filterField('costMin', t('costFrom'), { type: 'number', min: '0', step: 'any', inputMode: 'decimal', placeholder: '0' }),
-                    filterField('costMax', t('costTo'), { type: 'number', min: '0', step: 'any', inputMode: 'decimal', placeholder: '0' }),
-                    filterField('tokensMin', t('tokensFrom'), { type: 'number', min: '0', step: '1', inputMode: 'numeric', placeholder: '0' }),
-                    filterField('tokensMax', t('tokensTo'), { type: 'number', min: '0', step: '1', inputMode: 'numeric', placeholder: '0' }),
-                    h('button', {
-                      type: 'button',
-                      className: 'dsh-exp-button dsh-exp-button-secondary dsh-exp-button-small',
-                      onClick: resetFilters,
-                    }, t('resetFilters')))
+                ? h(FiltersAccordion, {
+                    t,
+                    applied: filters,
+                    draft: filterDraft,
+                    dirty: filtersDirty,
+                    onDraft: setDraftFilter,
+                    onSave: applyFilters,
+                    onRevert: revertFilters,
+                  })
                 : null,
               snapshot.error !== null && snapshot.data !== null
                 ? h('div', { className: 'dsh-exp-warning' }, `${t('loadFailed')} ${snapshot.error}`)
@@ -2002,7 +2255,32 @@ window.__ModuleLoader__.load({
                 : null,
               data !== null
                 ? h('div', { className: 'dsh-exp-diagnostics' }, diagnosticsText(data.diagnostics, filteredRows.length, t))
-                : null))))
+                : null,
+              h(Accordion, {
+                id: 'dsh-exp-danger',
+                storageKey: DANGER_OPEN_KEY,
+                tone: 'danger',
+                title: t('dangerTitle'),
+              },
+                h('p', { className: 'dsh-exp-acc-hint' }, t('dangerHint')),
+                dangerNote === '' ? null : h('p', { className: 'dsh-exp-danger-note', role: 'status' }, dangerNote),
+                h('div', { className: 'dsh-exp-save-row' },
+                  h('div', { className: 'dsh-exp-save-actions' },
+                    dangerArmed
+                      ? h('button', {
+                          type: 'button',
+                          className: 'dsh-exp-button dsh-exp-button-secondary dsh-exp-button-small',
+                          onClick: () => setDangerArmed(false),
+                        }, t('filtersRevert'))
+                      : null,
+                    h('button', {
+                      type: 'button',
+                      className: 'dsh-exp-button dsh-exp-button-danger',
+                      onClick: () => {
+                        if (dangerArmed) resetPanelSettings()
+                        else setDangerArmed(true)
+                      },
+                    }, dangerArmed ? t('dangerConfirm') : t('dangerReset')))))))))
     }
 
     function ExpensesIcon(props) {
@@ -2056,6 +2334,7 @@ window.__ModuleLoader__.load({
         COPY_FORMS,
         paginate,
         clampPage,
+        activeFilterCount,
         filterSessions,
         sortRows,
         sessionTokens,
@@ -2084,8 +2363,13 @@ window.__ModuleLoader__.load({
           Pager,
           TopUps,
           BalanceCard,
+          BalanceWallets,
           BalanceSection,
           PricingBlock,
+          Accordion,
+          FiltersAccordion,
+          SaveRow,
+          TopUpAction,
           ExpensesPage,
           UpdateOverlay,
           UpdateBanner,
