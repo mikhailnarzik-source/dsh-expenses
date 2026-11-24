@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
     /** A dismissed offer is remembered per available version. */
     const UPDATE_DISMISS_KEY = 'dsh-expenses:update-dismissed'
     /** Build identity reported to the platform on balance requests. */
-    const CLIENT_VERSION = '0.4.14'
+    const CLIENT_VERSION = '0.4.15'
     const CURRENCY_KEY = 'dsh-expenses:currency'
     const CURRENCIES = ['₽', '$', '¥']
     /** Currency symbol ↔ ISO code, the vocabulary the rate line and the price conversion use. */
@@ -181,14 +181,14 @@ window.__ModuleLoader__.load({
       version: 'Версия',
       checkUpdates: 'Проверить обновления',
       checkingUpdates: 'Проверяю…',
-      updateAvailable: 'Доступно обновление',
-      updateCurrent: 'Установлена последняя версия.',
+      updateAvailable: 'доступно обновление',
+      updateCurrent: 'установлена последняя версия',
       updateFailed: 'Не удалось проверить обновления',
       installUpdate: 'Установить',
       installingUpdate: 'Устанавливаю…',
       later: 'Позже',
       reloadPage: 'Перезагрузить',
-      updateInstalled: 'Обновление установлено.',
+      updateInstalled: 'обновление установлено',
       restartHint: 'Перезапустите DSH или обновите страницу, чтобы загрузить новую версию.',
       updateDirty: 'Есть локальные изменения — обновление остановлено.',
       updateNotes: 'Что нового',
@@ -478,8 +478,8 @@ window.__ModuleLoader__.load({
     }
 
     /** Poll the host's update snapshot while this component is mounted. */
-    function useUpdateState(pollMs) {
-      const [state, setState] = React.useState({ status: 'loading', data: null, error: null })
+    function useUpdateState(pollMs, initial) {
+      const [state, setState] = React.useState(initial ?? { status: 'loading', data: null, error: null })
       const refresh = React.useCallback(async () => {
         try {
           const data = await readUpdateStatus()
@@ -1440,14 +1440,14 @@ window.__ModuleLoader__.load({
         title = t('updateFailed')
         text = messageOf(result.error)
       } else if (installed) {
-        title = t('updateInstalled')
+        title = `${t('title')}: ${t('updateInstalled')}`
         text = t('restartHint')
       } else if (current) {
-        title = t('updateCurrent')
+        title = `${t('title')}: ${t('updateCurrent')}`
         text = ''
       } else if (available) {
-        title = `${t('updateAvailable')} ${data.latestVersion}`
-        text = `${t('version')} ${data.installedVersion} → ${data.latestVersion}`
+        title = `${t('title')}: ${t('updateAvailable')}`
+        text = `плагин «${t('title')}»: ${data.installedVersion} → ${data.latestVersion}`
         if (Number(data.behind) > 0) text += ` · ${t('behindPrefix')} ${formatTokens(data.behind)}`
         if (data.dirty === true) text += ` · ${t('updateDirty')}`
       } else {
@@ -1476,9 +1476,9 @@ window.__ModuleLoader__.load({
     }
 
     /** The startup offer: a fixed card in the app overlay, before the panel is opened. */
-    function UpdateOverlay() {
+    function UpdateOverlay(props) {
       const t = translate
-      const [state] = useUpdateState(120000)
+      const [state] = useUpdateState(120000, props?.initialState)
       const [busy, setBusy] = React.useState(false)
       const [result, setResult] = React.useState(null)
       const [dismissed, setDismissed] = React.useState(() => readStored(UPDATE_DISMISS_KEY))
@@ -1509,8 +1509,8 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'dsh-exp-update-toast', role: 'status', 'aria-live': 'polite' },
         h('div', { className: 'dsh-exp-update-toast-head' },
           h('div', null,
-            h('div', { className: 'dsh-exp-update-toast-title' }, installed ? t('updateInstalled') : t('updateAvailable')),
-            h('div', { className: 'dsh-exp-update-toast-versions' }, `${data.installedVersion} → ${data.latestVersion}`)),
+            h('div', { className: 'dsh-exp-update-toast-title' }, `${t('title')}: ${installed ? t('updateInstalled') : t('updateAvailable')}`),
+            h('div', { className: 'dsh-exp-update-toast-versions' }, `плагин «${t('title')}»: ${data.installedVersion} → ${data.latestVersion}`)),
           h('button', {
             type: 'button',
             className: 'dsh-exp-update-close',
@@ -2087,6 +2087,8 @@ window.__ModuleLoader__.load({
           BalanceSection,
           PricingBlock,
           ExpensesPage,
+          UpdateOverlay,
+          UpdateBanner,
         },
       },
       apply(ctx) {

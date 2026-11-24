@@ -139,7 +139,7 @@ async function loadClient() {
   module.apply(ctx)
   assert.equal(typeof module.__test, 'object', 'наружу отданы чистые помощники для тестов')
   const t = key => module.__test.DICT[key] ?? key
-  return { module, registered, injected, locales, t, test: module.__test }
+  return { module, registered, injected, locales, t, test: module.__test, storage }
 }
 
 /** One Session row fixture; every field the panel reads is present. */
@@ -545,6 +545,77 @@ test('client.js: строки фильтров и пейджера есть в �
   const ru = locales.filter(entry => entry.language === 'ru')
   assert.equal(ru.length, 1)
   assert.equal(ru[0].dictionary.period, 'Период')
+})
+
+test('client.js: плашка обновления называет плагин и не теряет кнопки', async () => {
+  const { test: api, storage } = await loadClient()
+  const overlay = api.components.UpdateOverlay({
+    initialState: {
+      status: 'ready',
+      error: null,
+      data: { available: true, installedVersion: '0.4.14', latestVersion: '0.4.15' },
+    },
+  })
+  assert.notEqual(overlay, null, 'плашка обновления отрисована')
+  const tree = render(overlay)
+  assert.equal(tree.props.className, 'dsh-exp-update-toast')
+  assert.equal(tree.props.role, 'status')
+
+  // Заголовок: «Расходы: доступно обновление» — сразу видно, чей это плагин.
+  const title = withClass(tree, 'dsh-exp-update-toast-title')[0]
+  assert.ok(title, 'заголовок плашки')
+  assert.equal(texts(title).join(''), 'Расходы: доступно обновление')
+  assert.match(texts(title).join(''), /Расходы/, 'название плагина в заголовке')
+
+  // Строка версий: название плагина и обе версии «установлена → новая».
+  const versions = withClass(tree, 'dsh-exp-update-toast-versions')[0]
+  assert.ok(versions, 'строка версий')
+  assert.match(texts(versions).join(''), /плагин «Расходы»: 0\.4\.14 → 0\.4\.15/)
+
+  // Кнопки «Установить»/«Позже»/× и dismiss сохранены.
+  const buttons = elements(tree).filter(node => node.type === 'button')
+  const install = buttons.find(node => texts(node).join('') === 'Установить')
+  const later = buttons.find(node => texts(node).join('') === 'Позже')
+  const close = buttons.find(node => node.props['aria-label'] === 'Скрыть предложение')
+  assert.ok(install, 'кнопка «Установить» на месте')
+  assert.ok(later, 'кнопка «Позже» на месте')
+  assert.ok(close, 'кнопка × на месте')
+  for (const button of [install, later, close]) {
+    assert.equal(typeof button.props.onClick, 'function', 'кнопка обрабатывает клик')
+  }
+
+  // «Позже» и × запоминают отклонённую версию — предложение больше не всплывает.
+  const dismissKey = 'dsh-expenses:update-dismissed'
+  for (const button of [later, close]) {
+    storage.delete(dismissKey)
+    button.props.onClick({})
+    assert.equal(storage.get(dismissKey), '0.4.15', 'отклонение запоминается по версии')
+  }
+})
+
+test('client.js: баннер обновления в панели тоже называет плагин', async () => {
+  const { test: api, t } = await loadClient()
+  let installs = 0
+  const tree = render(api.components.UpdateBanner({
+    t,
+    data: { available: true, installedVersion: '0.4.14', latestVersion: '0.4.15', behind: 3, notes: ['новый отчёт'] },
+    result: null,
+    note: '',
+    busy: false,
+    onInstall: () => { installs += 1 },
+    onReload: () => {},
+  }))
+  const title = withClass(tree, 'dsh-exp-update-banner-title')[0]
+  assert.ok(title, 'заголовок баннера')
+  assert.equal(texts(title).join(''), 'Расходы: доступно обновление')
+  const text = withClass(tree, 'dsh-exp-update-banner-text')[0]
+  assert.match(texts(text).join(''), /плагин «Расходы»: 0\.4\.14 → 0\.4\.15/)
+  assert.match(texts(text).join(''), /позади на 3/)
+
+  const install = elements(tree).find(node => node.type === 'button' && texts(node).join('') === 'Установить')
+  assert.ok(install, 'кнопка «Установить» в баннере')
+  install.props.onClick()
+  assert.equal(installs, 1, 'установка запускается')
 })
 
 test('client.js: без битых символов в исходнике', async () => {
