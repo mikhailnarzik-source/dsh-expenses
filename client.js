@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
     /** A dismissed offer is remembered per available version. */
     const UPDATE_DISMISS_KEY = 'dsh-expenses:update-dismissed'
     /** Build identity reported to the platform on balance requests. */
-    const CLIENT_VERSION = '0.4.13'
+    const CLIENT_VERSION = '0.4.14'
     const CURRENCY_KEY = 'dsh-expenses:currency'
     const CURRENCIES = ['₽', '$', '¥']
     /** Currency symbol ↔ ISO code, the vocabulary the rate line and the price conversion use. */
@@ -56,11 +56,15 @@ window.__ModuleLoader__.load({
     const TOPUP_PAGE_SIZE = 5
     /** The period presets in the session-filter row, plus the free date range. */
     const PERIODS = ['all', 'today', '7d', '30d', 'custom']
+    /** Session modes for the «все / облачные / локальные» filter. */
+    const MODES = ['all', 'cloud', 'local']
     const DAY_MS = 24 * 60 * 60 * 1000
-    /** The neutral filter state: both toggles off, the whole history, no ranges. */
+    /** Russian plural forms of the copies a row collapses. */
+    const COPY_FORMS = ['копия', 'копии', 'копий']
+    /** The neutral filter state: no narrows, the whole history, every mode. */
     const DEFAULT_FILTERS = Object.freeze({
       onlyToday: false,
-      hideSubagents: false,
+      mode: 'all',
       period: 'all',
       dateFrom: '',
       dateTo: '',
@@ -95,6 +99,12 @@ window.__ModuleLoader__.load({
       loadFailed: 'Не удалось загрузить данные.',
       retry: 'Повторить',
       subagent: 'субагент', archived: 'удалена', archivedHint: 'Удалённые сессии остаются в истории: их стоимость входит в итоги.',
+      local: 'локальная', localHint: 'Локальная сессия: не синхронизируется, но расходы учитываются.',
+      subagentCount: 'субагентов', copiesHint: 'Копии одной сессии не складываются: показан экземпляр с максимальной стоимостью.',
+      showBreakdown: 'Показать разбивку по субагентам', breakdown: 'Субагенты',
+      firstMessageHint: 'Первое сообщение',
+      modeLabel: 'Режим', modeAll: 'Все сессии', modeCloud: 'Облачные', modeLocal: 'Локальные',
+      archiveRecords: 'Записей в архиве', logicalSessions: 'Сессий', shownShort: 'показано', localShort: 'локальных',
       untitled: 'Без названия',
       currency: 'Валюта',
       pricingTitle: 'Цены DeepSeek за 1 млн токенов',
@@ -143,7 +153,6 @@ window.__ModuleLoader__.load({
       search: 'Поиск по названию или модели',
       searchClear: 'Сбросить поиск',
       onlyToday: 'Только сегодня',
-      hideSubagents: 'Без субагентов',
       period: 'Период',
       periodAll: 'Всё время',
       periodToday: 'Сегодня',
@@ -314,9 +323,19 @@ window.__ModuleLoader__.load({
 .dsh-exp-table tbody tr:last-child td{border-bottom:none}
 .dsh-exp-table tbody tr:hover{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 4%,transparent)}
 .dsh-exp-num{text-align:right;white-space:nowrap}
-.dsh-exp-session{display:flex;align-items:center;gap:8px;min-width:0}
-.dsh-exp-session-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.dsh-exp-session{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
+.dsh-exp-session-title{overflow:hidden;flex:1 1 auto;min-width:7em;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .dsh-exp-badge{flex:none;padding:0 7px;border-radius:999px;background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 13%,var(--dsw-alias-bg-layer-1));color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 75%,var(--dsw-alias-label-primary));font-size:11px;line-height:18px;white-space:nowrap}
+.dsh-exp-badge-local{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,var(--dsw-alias-bg-layer-1));color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 78%,var(--dsw-alias-label-primary))}
+.dsh-exp-badge-copies{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 9%,var(--dsw-alias-bg-layer-1));color:var(--dsw-alias-label-secondary)}
+.dsh-exp-badge-button{border:0;font:inherit;font-size:11px;line-height:18px;cursor:pointer}
+.dsh-exp-badge-button:hover{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,var(--dsw-alias-bg-layer-1))}
+.dsh-exp-session-cell{display:flex;flex-direction:column;gap:2px;min-width:0}
+.dsh-exp-breakdown{display:flex;flex-direction:column;gap:2px;min-width:0;margin:4px 0 2px;padding:6px 8px;border-left:2px solid color-mix(in srgb,var(--dsw-alias-brand-primary) 35%,transparent);border-radius:0 8px 8px 0;background:color-mix(in srgb,var(--dsw-alias-brand-primary) 5%,transparent)}
+.dsh-exp-breakdown-row{display:flex;align-items:center;gap:6px;min-width:0;color:var(--dsw-alias-label-secondary);font-size:11.5px;line-height:16px}
+.dsh-exp-breakdown-title{overflow:hidden;flex:1 1 auto;min-width:0;text-overflow:ellipsis;white-space:nowrap}
+.dsh-exp-breakdown-cost{margin-left:auto;flex:none;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dsh-exp-diagnostics{padding:8px 12px 10px;border-top:.5px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font-size:11.5px;line-height:16px;overflow-wrap:anywhere}
 .dsh-exp-date{color:var(--dsw-alias-label-secondary);white-space:nowrap}
 .dsh-exp-cost-cell{white-space:nowrap;font-weight:600;color:color-mix(in srgb,var(--dsw-alias-brand-primary) 70%,var(--dsw-alias-label-primary))}
 .dsh-exp-dash{color:var(--dsw-alias-label-tertiary)}
@@ -807,13 +826,13 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** The remembered filters: both toggles, the period and every numeric range. */
+    /** The remembered filters: the mode, the period and every numeric range. */
     function readTableFilters() {
       const parsed = readJson(TABLE_FILTERS_KEY)
       const next = { ...DEFAULT_FILTERS }
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return next
       next.onlyToday = parsed.onlyToday === true
-      next.hideSubagents = parsed.hideSubagents === true
+      if (MODES.includes(parsed.mode)) next.mode = parsed.mode
       if (PERIODS.includes(parsed.period)) next.period = parsed.period
       for (const key of ['dateFrom', 'dateTo']) {
         if (typeof parsed[key] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed[key])) next[key] = parsed[key]
@@ -885,6 +904,47 @@ window.__ModuleLoader__.load({
       return (Number(row?.input) || 0) + (Number(row?.cacheHit) || 0) + (Number(row?.output) || 0)
     }
 
+    /** Русское склонение по числу: формы «копия / копии / копий». */
+    function pluralRu(value, forms) {
+      const number = Math.abs(Math.trunc(Number(value) || 0))
+      const tail = number % 100
+      if (tail >= 11 && tail <= 14) return forms[2]
+      const last = number % 10
+      if (last === 1) return forms[0]
+      if (last >= 2 && last <= 4) return forms[1]
+      return forms[2]
+    }
+
+    /**
+     * Строка диагностики под таблицей: сколько записей в архиве, сколько из них
+     * логических сессий, сколько показано после фильтров и сколько локальных.
+     * При пустых фильтрах «показано» совпадает с числом сессий.
+     */
+    function diagnosticsText(diagnostics, shown, t) {
+      if (diagnostics === null || typeof diagnostics !== 'object') return ''
+      const records = Number(diagnostics.archiveRecords) || 0
+      const sessions = Number(diagnostics.sessions) || 0
+      const local = Number(diagnostics.local) || 0
+      const shownCount = Number(shown) || 0
+      return [
+        `${t('archiveRecords')}: ${formatTokens(records)}`,
+        `${t('logicalSessions')}: ${formatTokens(sessions)}`,
+        `${t('shownShort')}: ${formatTokens(shownCount)}`,
+        `${t('localShort')}: ${formatTokens(local)}`,
+      ].join(' · ')
+    }
+
+    /** Подпись раскрытия субагентов: «субагентов: 5». */
+    function subagentBadgeText(count, t) {
+      return `${t('subagentCount')}: ${formatTokens(count)}`
+    }
+
+    /** Подпись копий: «+3 копии». */
+    function copiesBadgeText(count) {
+      const number = Math.max(0, Math.trunc(Number(count) || 0))
+      return `+${formatTokens(number)} ${pluralRu(number, COPY_FORMS)}`
+    }
+
     /** The case-insensitive haystack the search field matches: Session title plus its models. */
     function searchText(row) {
       return [String(row?.title ?? ''), rowModels(row).join(' ')].join(' ').toLowerCase()
@@ -907,7 +967,8 @@ window.__ModuleLoader__.load({
       const tokensMax = parseFilterNumber(active.tokensMax)
       return list.filter(row => {
         if (row === null || typeof row !== 'object') return false
-        if (active.hideSubagents === true && row.subagent === true) return false
+        if (active.mode === 'local' && row.local !== true) return false
+        if (active.mode === 'cloud' && row.local === true) return false
         if (active.onlyToday === true && !activeToday(row)) return false
         const created = Number(row.createdAt) || 0
         if (range !== null && (created < range.from || created > range.to)) return false
@@ -1033,6 +1094,7 @@ window.__ModuleLoader__.load({
           h(Metric, { label: props.t('toolCalls'), value: formatTokens(totals.toolCalls) })))
     }
 
+    /** Одна строка логической сессии: название, бейджи, итог и (по желанию) разбивка. */
     function SessionRow(props) {
       const row = props.row
       const t = props.t
@@ -1045,15 +1107,58 @@ window.__ModuleLoader__.load({
       const models = rowModels(row)
       const modelText = models.length === 0 ? '' : `${t('model')}: ${models.join(', ')}`
       const inputTotal = (Number(row.input) || 0) + (Number(row.cacheHit) || 0)
+      const subagents = Array.isArray(row.subagents) ? row.subagents : []
+      const subagentCount = Number(row.subagentCount) || subagents.length
+      const copies = Number(row.copies) || 0
+      const local = row.local === true
+      const firstMessage = typeof row.firstMessage === 'string' ? row.firstMessage : ''
+      const expanded = props.breakdownExpanded === true
+      const toDisplayCost = typeof props.costOf === 'function' ? props.costOf : (value) => value
       const rowTitle = unavailable
         ? t('unavailable')
-        : [title, modelText].filter(part => part !== '').join(' · ')
+        : [
+            title !== t('untitled') ? title : (firstMessage === '' ? t('untitled') : `${t('firstMessageHint')}: ${firstMessage}`),
+            modelText,
+            local ? t('localHint') : '',
+            row.archived === true ? t('archivedHint') : '',
+            subagentCount > 0 ? subagentBadgeText(subagentCount, t) : '',
+            copies > 0 ? copiesBadgeText(copies) : '',
+          ].filter(part => part !== '').join(' · ')
+      const toggle = typeof props.onToggleBreakdown === 'function' ? props.onToggleBreakdown : undefined
+      /** Одна строка разбивки: субагент с отступом по уровню, стоимостью и бейджами. */
+      const breakdownLine = (entry, index) => {
+        const display = entry.costUsd === null || entry.costUsd === undefined ? null : toDisplayCost(entry.costUsd)
+        return h('div', {
+          key: `${entry.id ?? index}:${index}`,
+          className: 'dsh-exp-breakdown-row',
+          style: { paddingLeft: `${Math.max(0, (Number(entry.depth) || 1) - 1) * 12}px` },
+        },
+          h('span', { className: 'dsh-exp-breakdown-title', title: entry.title || entry.firstMessage || t('untitled') }, entry.title || t('untitled')),
+          entry.local === true ? h('span', { className: 'dsh-exp-badge dsh-exp-badge-local', title: t('localHint') }, t('local')) : null,
+          Number(entry.copies) > 0 ? h('span', { className: 'dsh-exp-badge dsh-exp-badge-copies' }, copiesBadgeText(entry.copies)) : null,
+          Number(entry.subagents) > 0 ? h('span', { className: 'dsh-exp-badge' }, subagentBadgeText(entry.subagents, t)) : null,
+          h('span', { className: 'dsh-exp-breakdown-cost' }, display === null ? dash : formatMoney(display, symbol)))
+      }
       return h('tr', { title: rowTitle },
         h('td', null,
-          h('div', { className: 'dsh-exp-session' },
-            h('span', { className: 'dsh-exp-session-title' }, title),
-            row.subagent === true ? h('span', { className: 'dsh-exp-badge' }, t('subagent')) : null,
-            row.archived === true ? h('span', { className: 'dsh-exp-badge', title: t('archivedHint') }, t('archived')) : null)),
+          h('div', { className: 'dsh-exp-session-cell' },
+            h('div', { className: 'dsh-exp-session' },
+              h('span', { className: 'dsh-exp-session-title' }, title),
+              copies > 0 ? h('span', { className: 'dsh-exp-badge dsh-exp-badge-copies', title: t('copiesHint') }, copiesBadgeText(copies)) : null,
+              local ? h('span', { className: 'dsh-exp-badge dsh-exp-badge-local', title: t('localHint') }, t('local')) : null,
+              row.archived === true ? h('span', { className: 'dsh-exp-badge', title: t('archivedHint') }, t('archived')) : null,
+              subagentCount > 0
+                ? h('button', {
+                    type: 'button',
+                    className: 'dsh-exp-badge dsh-exp-badge-button',
+                    title: t('showBreakdown'),
+                    'aria-expanded': expanded ? 'true' : 'false',
+                    ...(toggle === undefined ? {} : { onClick: toggle }),
+                  }, subagentBadgeText(subagentCount, t))
+                : null),
+            expanded && subagents.length > 0
+              ? h('div', { className: 'dsh-exp-breakdown', 'aria-label': t('breakdown') }, subagents.map(breakdownLine))
+              : null)),
         h('td', { className: 'dsh-exp-date' }, row.createdAt ? dateFormat.format(new Date(row.createdAt)) : '—'),
         h('td', {
           className: 'dsh-exp-num',
@@ -1443,6 +1548,8 @@ window.__ModuleLoader__.load({
       const [page, setPage] = React.useState(1)
       const [sort, setSort] = React.useState(readTableSort)
       const [filters, setFilters] = React.useState(readTableFilters)
+      const [showBreakdown, setShowBreakdown] = React.useState(false)
+      const [expandedRows, setExpandedRows] = React.useState(() => ({}))
       const [update, refreshUpdate] = useUpdateState(60000)
       const [updateBusy, setUpdateBusy] = React.useState(false)
       const [updateResult, setUpdateResult] = React.useState(null)
@@ -1599,6 +1706,16 @@ window.__ModuleLoader__.load({
         setFilters(next)
         writeJson(TABLE_FILTERS_KEY, next)
         setPage(1)
+      }
+
+      /** Раскрыть/свернуть разбивку по субагентам у одной строки. */
+      const toggleBreakdown = (id) => {
+        setExpandedRows((current) => {
+          const next = { ...(current !== null && typeof current === 'object' ? current : {}) }
+          if (next[id] === true) delete next[id]
+          else next[id] = true
+          return next
+        })
       }
 
       const periodOptions = [
@@ -1777,10 +1894,10 @@ window.__ModuleLoader__.load({
                     h('label', { className: 'dsh-exp-toggle' },
                       h('input', {
                         type: 'checkbox',
-                        checked: filters.hideSubagents,
-                        onChange: event => setFilter('hideSubagents', event.target.checked),
+                        checked: showBreakdown,
+                        onChange: event => setShowBreakdown(event.target.checked),
                       }),
-                      t('hideSubagents')),
+                      t('showBreakdown')),
                     h('span', { className: 'dsh-exp-count' },
                       `${t('shown')} `,
                       h('b', null, formatTokens(filteredRows.length)),
@@ -1789,6 +1906,14 @@ window.__ModuleLoader__.load({
                 : null,
               rows.length > 0
                 ? h('div', { className: 'dsh-exp-filters' },
+                    h('label', { className: 'dsh-exp-field' },
+                      h('span', { className: 'dsh-exp-field-label' }, t('modeLabel')),
+                      h('select', {
+                        className: 'dsh-exp-select',
+                        value: filters.mode,
+                        'aria-label': t('modeLabel'),
+                        onChange: event => setFilter('mode', event.target.value),
+                      }, [['all', t('modeAll')], ['cloud', t('modeCloud')], ['local', t('modeLocal')]].map(([value, label]) => h('option', { key: value, value }, label)))),
                     h('label', { className: 'dsh-exp-field' },
                       h('span', { className: 'dsh-exp-field-label' }, t('period')),
                       h('select', {
@@ -1857,7 +1982,10 @@ window.__ModuleLoader__.load({
                         key: row.id,
                         row,
                         cost: toDisplay(row.costUsd),
+                        costOf: (usd) => toDisplay(usd),
                         symbol: displaySymbol,
+                        breakdownExpanded: showBreakdown === true || (expandedRows !== null && typeof expandedRows === 'object' && expandedRows[row.id] === true),
+                        onToggleBreakdown: () => toggleBreakdown(row.id),
                         t,
                       })))))
                 : null,
@@ -1871,6 +1999,9 @@ window.__ModuleLoader__.load({
                       range: `${sessionPage.from}–${sessionPage.to} ${t('of')} ${sessionPage.total}`,
                       onPage: setPage,
                     }))
+                : null,
+              data !== null
+                ? h('div', { className: 'dsh-exp-diagnostics' }, diagnosticsText(data.diagnostics, filteredRows.length, t))
                 : null))))
     }
 
@@ -1921,11 +2052,17 @@ window.__ModuleLoader__.load({
         SESSION_PAGE_SIZE,
         TOPUP_PAGE_SIZE,
         DEFAULT_FILTERS,
+        MODES,
+        COPY_FORMS,
         paginate,
         clampPage,
         filterSessions,
         sortRows,
         sessionTokens,
+        pluralRu,
+        diagnosticsText,
+        subagentBadgeText,
+        copiesBadgeText,
         periodRange,
         parseFilterNumber,
         parseDateInput,

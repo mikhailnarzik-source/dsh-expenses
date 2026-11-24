@@ -441,7 +441,9 @@ test('client.js: фильтры сессий — период, диапазон�
   assert.deepEqual(ids(api.filterSessions(rows, { ...base, costMax: '2' }, { now })), ['a'], 'строка без цены выпадает')
   assert.deepEqual(ids(api.filterSessions(rows, { ...base, tokensMin: '1000' }, { now })), ['c'])
   assert.deepEqual(ids(api.filterSessions(rows, { ...base, tokensMax: '0' }, { now })), ['b'])
-  assert.deepEqual(ids(api.filterSessions(rows, { ...base, hideSubagents: true }, { now })), ['a', 'c'])
+  assert.deepEqual(ids(api.filterSessions(rows, { ...base, mode: 'cloud' }, { now })), ['a', 'b', 'c'], 'облачных не отсекает: режим не задан')
+  assert.deepEqual(ids(api.filterSessions(rows, { ...base, mode: 'local' }, { now })), [], 'локальных строк нет')
+  assert.deepEqual(ids(api.filterSessions(rows.concat(sessionRow({ id: 'd', title: 'Local', local: true, mode: 'local' })), { ...base, mode: 'local' }, { now })), ['d'])
   assert.deepEqual(ids(api.filterSessions(rows, { ...base, onlyToday: true }, { now })), ['a'])
 
   assert.deepEqual(ids(api.filterSessions(rows, base, { now, query: 'alpha' })), ['a'], 'поиск по названию')

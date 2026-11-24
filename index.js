@@ -26,12 +26,19 @@ import {
   UPDATE_STATUS_PATH,
   createUpdateService,
 } from './update.js'
+import { aggregateSessions } from './lib/aggregate.mjs'
+import { createSessionFacts, dshHome } from './lib/session-facts.mjs'
 
 /** Absolute route registered on the browser-authenticated Fetch bridge. */
 export const OVERVIEW_PATH = '/api/expenses.overview'
 
 /** Куда складывается история сессий, чтобы стоимость не пропадала после удаления. */
 export const ARCHIVE_PATH = join(homedir(), '.dsh', 'dsh-expenses', 'sessions.json')
+
+/** Файл архива с учётом `DSH_HOME` (тесты и перенос каталога). */
+function archiveFile() {
+  return join(dshHome(), 'dsh-expenses', 'sessions.json')
+}
 
 /** Сколько сессий хранить в архиве. */
 export const ARCHIVE_LIMIT = 5000
@@ -42,7 +49,7 @@ export const CACHE_TTL_MS = 15000
 /** Прочитать архив истории сессий. */
 async function loadArchive() {
   try {
-    const text = await readFile(ARCHIVE_PATH, 'utf8')
+    const text = await readFile(archiveFile(), 'utf8')
     const parsed = JSON.parse(text)
     const sessions = parsed !== null && typeof parsed === 'object' && parsed.sessions !== null && typeof parsed.sessions === 'object' ? parsed.sessions : {}
     return { version: 1, sessions }
@@ -68,8 +75,8 @@ async function saveArchive(archive) {
     for (const id of ids.slice(ARCHIVE_LIMIT)) delete archive.sessions[id]
   }
   try {
-    await mkdir(dirname(ARCHIVE_PATH), { recursive: true })
-    await writeFile(ARCHIVE_PATH, JSON.stringify(archive), 'utf8')
+    await mkdir(dirname(archiveFile()), { recursive: true })
+    await writeFile(archiveFile(), JSON.stringify(archive), 'utf8')
   } catch {
     // Архив — удобство; его сбой не должен ломать панель.
   }
@@ -400,6 +407,9 @@ function emptyRow(header, title) {
   return {
     id: header.id,
     title,
+    titleSource: title === '' ? 'none' : 'session/title',
+    firstMessage: '',
+    parentSession: typeof header.parentSession === 'string' ? header.parentSession : '',
     createdAt: Number(header.createdAt) || 0,
     updatedAt: 0,
     models: [],
@@ -486,10 +496,12 @@ export async function readOverview(ctx, options = {}) {
       todayStart: startOfToday(),
       totals: { today: { input: 0, cacheHit: 0, output: 0, requests: 0, toolCalls: 0, costUsd: null }, all: { input: 0, cacheHit: 0, output: 0, requests: 0, toolCalls: 0, costUsd: null } },
       sessions: [],
+      diagnostics: { records: 0, archiveRecords: 0, sessions: 0, local: 0, cloud: 0, subagents: 0, copies: 0, titles: { sessionTitle: 0, firstMessage: 0, none: 0 } },
       error: 'Session query is not available in this composition.',
     }
   }
   const store = ctx.get === undefined ? undefined : ctx.get('sessions')
+  const facts = options.facts ?? createSessionFacts({ home: dshHome() })
   const todayStart = startOfToday()
   const records = await sessionQuery.listSessions()
   const titles = await readTitles(sessionQuery, records.map(record => record.header.id))
@@ -499,10 +511,16 @@ export async function readOverview(ctx, options = {}) {
     const id = header.id
     seen.add(id)
     const title = titles.get(id) || ''
+    const headerParent = typeof header.parentSession === 'string' ? header.parentSession : ''
     const cached = cache.get(id)
     const now = Date.now()
     if (!fresh && cached !== undefined && cached.pricingKey === pricingKey && now - cached.at < CACHE_TTL_MS) {
-      return { ...cached.row, title: title || cached.row.title }
+      return {
+        ...cached.row,
+        title: title || cached.row.title,
+        titleSource: title !== '' ? 'session/title' : cached.row.titleSource,
+        parentSession: headerParent || cached.row.parentSession,
+      }
     }
     try {
       if (record.live === true && store !== undefined) {
@@ -519,7 +537,10 @@ export async function readOverview(ctx, options = {}) {
       const summary = summarizeEvents(snapshot.events, snapshot.inheritedEventCount, todayStart, models)
       const row = {
         id,
-        title: title || summary.firstUserText,
+        title,
+        titleSource: title === '' ? 'none' : 'session/title',
+        firstMessage: summary.firstUserText,
+        parentSession: headerParent,
         createdAt: Number(header.createdAt) || 0,
         updatedAt: summary.updatedAt,
         models: summary.models,
@@ -552,15 +573,6 @@ export async function readOverview(ctx, options = {}) {
   // чтобы их стоимость не исчезала из итогов.
   const archive = await loadArchive()
   const liveIds = new Set(rows.map((row) => row.id))
-  let archiveChanged = false
-  for (const row of rows) {
-    const snapshot = { ...row }
-    const previous = archive.sessions[row.id]
-    if (previous === undefined || JSON.stringify(previous) !== JSON.stringify(snapshot)) {
-      archive.sessions[row.id] = snapshot
-      archiveChanged = true
-    }
-  }
   const archivedRows = []
   for (const [id, stored] of Object.entries(archive.sessions)) {
     if (liveIds.has(id)) continue
@@ -576,8 +588,52 @@ export async function readOverview(ctx, options = {}) {
     }
     archivedRows.push(row)
   }
+
+  // Названия из session/title, родители и режим «локальная/облачная» — из лога,
+  // зеркала, карантина и session-modes.json; архив их не хранит.
+  const rawRecords = [...rows, ...archivedRows]
+  let meta
+  try {
+    meta = await facts.describe(rawRecords, { snapshotTitles: titles })
+  } catch {
+    meta = new Map()
+  }
+
+  // Архив обновляем уже обогащёнными записями: удалённая сессия сохранит
+  // настоящее название и связь с родителем, даже когда файлов на диске нет.
+  let archiveChanged = false
+  const archiveRow = (row, id) => {
+    const info = meta.get(id)
+    const snapshot = { ...row }
+    delete snapshot.archived
+    if (info !== undefined) {
+      if (info.titleSource === 'session/title' && snapshot.title !== info.title) {
+        snapshot.title = info.title
+        snapshot.titleSource = 'session/title'
+      } else if (snapshot.titleSource === undefined) {
+        snapshot.titleSource = info.titleSource
+      }
+      if (typeof info.firstMessage === 'string' && snapshot.firstMessage !== info.firstMessage) snapshot.firstMessage = info.firstMessage
+      if (info.parentSession !== '' && snapshot.parentSession !== info.parentSession) snapshot.parentSession = info.parentSession
+      if (typeof info.lineageRoot === 'string' && info.lineageRoot !== '' && snapshot.lineageRoot !== info.lineageRoot) snapshot.lineageRoot = info.lineageRoot
+      if (snapshot.local !== info.local) snapshot.local = info.local
+    }
+    const previous = archive.sessions[id]
+    if (previous === undefined || JSON.stringify(previous) !== JSON.stringify(snapshot)) {
+      archive.sessions[id] = snapshot
+      archiveChanged = true
+    }
+  }
+  for (const row of rows) archiveRow(row, row.id)
+  for (const row of archivedRows) archiveRow(row, row.id)
   if (archiveChanged) await saveArchive(archive)
-  const sessions = [...rows, ...archivedRows]
+
+  const aggregated = aggregateSessions(rawRecords, {
+    meta,
+    liveIds,
+    archiveRecords: Object.keys(archive.sessions).length,
+  })
+  const sessions = aggregated.sessions
   const totals = {
     today: { input: 0, cacheHit: 0, output: 0, requests: 0, toolCalls: 0, costUsd: 0 },
     all: { input: 0, cacheHit: 0, output: 0, requests: 0, toolCalls: 0, costUsd: 0 },
@@ -606,6 +662,7 @@ export async function readOverview(ctx, options = {}) {
         }
       : totals,
     sessions,
+    diagnostics: aggregated.diagnostics,
   }
 }
 
@@ -1002,6 +1059,8 @@ export function apply(ctx) {
   const ratesCache = { at: 0, value: undefined }
   const pricingCache = { at: 0, value: undefined, modelsJson: null }
   const updater = createUpdateService({ pluginDir: fileURLToPath(new URL('.', import.meta.url)) })
+  /** Факты о сессиях (названия, родители, режимы) живут столько же, сколько host-плагин. */
+  const facts = createSessionFacts({ home: dshHome() })
 
   /** The composed web-fetch service, when this profile mounts one, as a pricing fallback. */
   const webFetchText = async (url) => {
@@ -1049,8 +1108,11 @@ export function apply(ctx) {
     fetch: async (request) => {
       const fresh = new URL(request.url).searchParams.get('fresh') === '1'
       try {
+        // «Обновить» пересканирует каталоги: перенесённая из карантина сессия
+        // появляется без перезапуска DSH.
+        if (fresh) facts.invalidate()
         const pricing = await waitForPricing(currentPricing(fresh), pricingCache)
-        const overview = await readOverview(ctx, { fresh, cache, pricing: pricing.models ?? null })
+        const overview = await readOverview(ctx, { fresh, cache, pricing: pricing.models ?? null, facts })
         return jsonResponse({
           ...overview,
           pricing: {
